@@ -4,7 +4,7 @@ local HttpService = game:GetService("HttpService")
 local ScriptConfig = {
     {
         Name = "ReignPiece",
-        Url = 'https://raw.githubusercontent.com/devkidlumedev-wq/roblox/main/ReignPieceZ.lua',
+        Url = 'https://raw.githubusercontent.com/devkidlumedev-wq/voltz/main/Reignpiecez.lua',
         Ids = {
             78466992256287
         }
