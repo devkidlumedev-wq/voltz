@@ -1,7 +1,7 @@
--- BUILD: VOLTZUI-1.2.5-OUTER-CORNER-FIX-20260707
+-- BUILD: VOLTZUI-1.2.7-THAI-FONT-20260707
 --[[
     VoltzUI - Clean Roblox UI Library
-    BUILD: VOLTZUI-1.2.5-OUTER-CORNER-FIX-20260707
+    BUILD: VOLTZUI-1.2.7-THAI-FONT-20260707
     Theme: clean dark + blue accent
     External icons: https://github.com/Footagesus/Icons
 
@@ -20,7 +20,7 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.2.5",
+    Version = "1.2.7",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -58,6 +58,136 @@ local Theme = {
     Danger = Color3.fromRGB(248, 113, 113),
     Warning = Color3.fromRGB(250, 204, 21),
 }
+
+-- Thai-capable font system.
+-- NotoSansThai is preferred; safe fallbacks prevent the library from failing
+-- when a specific font family is unavailable in the current Roblox build.
+local FONT_FALLBACKS = {
+    "NotoSansThai",
+    "NotoSans",
+    "BuilderSans",
+    "Gotham",
+}
+
+local FONT_WEIGHTS = {
+    Regular = Enum.FontWeight.Regular,
+    Medium = Enum.FontWeight.Medium,
+    SemiBold = Enum.FontWeight.SemiBold,
+}
+
+local ActiveFontFamily = "NotoSansThai"
+local ActiveFonts = {}
+
+local function tryFontFromName(family, weight)
+    if type(family) ~= "string" or family == "" then
+        return nil
+    end
+
+    local success, result = pcall(function()
+        return Font.fromName(family, weight, Enum.FontStyle.Normal)
+    end)
+
+    if success and result then
+        return result
+    end
+    return nil
+end
+
+local function fallbackFont(weight)
+    local success, result = pcall(function()
+        return Font.new(
+            "rbxasset://fonts/families/GothamSSm.json",
+            weight,
+            Enum.FontStyle.Normal
+        )
+    end)
+
+    if success and result then
+        return result
+    end
+
+    -- BuilderSans should exist on modern clients and remains the final fallback.
+    return Font.fromName("BuilderSans", weight, Enum.FontStyle.Normal)
+end
+
+local function resolveFontForRole(spec, role)
+    local weight = FONT_WEIGHTS[role] or Enum.FontWeight.Regular
+
+    if typeof(spec) == "Font" then
+        return Font.new(spec.Family, weight, spec.Style)
+    end
+
+    if type(spec) == "table" then
+        local direct = spec[role] or spec[role:lower()]
+        if typeof(direct) == "Font" then
+            return direct
+        end
+    end
+
+    local requestedFamily
+    if type(spec) == "string" then
+        requestedFamily = spec
+    elseif type(spec) == "table" then
+        requestedFamily = spec.Family or spec.Name
+    end
+
+    local checked = {}
+    local candidates = {}
+    if requestedFamily and requestedFamily ~= "" then
+        table.insert(candidates, requestedFamily)
+    end
+    for _, family in ipairs(FONT_FALLBACKS) do
+        table.insert(candidates, family)
+    end
+
+    for _, family in ipairs(candidates) do
+        if not checked[family] then
+            checked[family] = true
+            local font = tryFontFromName(family, weight)
+            if font then
+                return font, family
+            end
+        end
+    end
+
+    return fallbackFont(weight), "Gotham"
+end
+
+local function applyFontSpec(spec)
+    local family = type(spec) == "string" and spec
+        or (type(spec) == "table" and (spec.Family or spec.Name))
+        or "NotoSansThai"
+
+    local resolved = {}
+    local resolvedFamily = family
+    for role in pairs(FONT_WEIGHTS) do
+        local font, actualFamily = resolveFontForRole(spec or family, role)
+        resolved[role] = font
+        if actualFamily then
+            resolvedFamily = actualFamily
+        end
+    end
+
+    ActiveFontFamily = resolvedFamily or family
+    ActiveFonts = resolved
+    VoltzUI.FontFamily = ActiveFontFamily
+    VoltzUI.Fonts = ActiveFonts
+end
+
+local function fontFace(role)
+    return ActiveFonts[role] or ActiveFonts.Regular or fallbackFont(Enum.FontWeight.Regular)
+end
+
+applyFontSpec("NotoSansThai")
+
+function VoltzUI:SetFont(fontSpec)
+    applyFontSpec(fontSpec or "NotoSansThai")
+    return self
+end
+
+function VoltzUI:GetFont()
+    return self.FontFamily, self.Fonts
+end
 
 local function cloneTable(source)
     local result = {}
@@ -396,6 +526,39 @@ local function protectGui(screenGui)
             syn.protect_gui(screenGui)
         end
     end)
+end
+
+local function destroyPreviousVoltzUI()
+    local checked = {}
+
+    local function clean(parent)
+        if not parent or checked[parent] then
+            return
+        end
+        checked[parent] = true
+
+        local existing = parent:FindFirstChild("VoltzUI")
+        if existing then
+            pcall(function()
+                existing:Destroy()
+            end)
+        end
+    end
+
+    pcall(function()
+        if type(gethui) == "function" then
+            clean(gethui())
+        end
+    end)
+
+    clean(CoreGui)
+
+    if LocalPlayer then
+        local playerGui = LocalPlayer:FindFirstChildOfClass("PlayerGui")
+        if playerGui then
+            clean(playerGui)
+        end
+    end
 end
 
 local function httpGet(url)
@@ -787,7 +950,7 @@ local function createTextButton(properties)
         Text = "",
         BorderSizePixel = 0,
         BackgroundColor3 = Theme.Surface2,
-        Font = Enum.Font.GothamMedium,
+        FontFace = fontFace("Medium"),
         TextColor3 = Theme.Text,
         TextSize = 13,
     }, properties))
@@ -823,7 +986,7 @@ local function createElementBase(section, options, height)
         BackgroundTransparency = 1,
         Position = UDim2.new(0, leftOffset, 0, options.Desc and 12 or 0),
         Size = UDim2.new(1, -(leftOffset + 112), options.Desc and 0 or 1, options.Desc and 21 or 0),
-        Font = Enum.Font.GothamMedium,
+        FontFace = fontFace("Medium"),
         Text = options.Title,
         TextColor3 = Theme.Text,
         TextSize = 14,
@@ -839,7 +1002,7 @@ local function createElementBase(section, options, height)
             BackgroundTransparency = 1,
             Position = UDim2.new(0, leftOffset, 0, 36),
             Size = UDim2.new(1, -(leftOffset + 112), 0, 18),
-            Font = Enum.Font.Gotham,
+            FontFace = fontFace("Regular"),
             Text = options.Desc,
             TextColor3 = Theme.TextMuted,
             TextTransparency = 0,
@@ -1003,7 +1166,7 @@ function SectionMethods:AddSlider(options)
         BackgroundTransparency = 1,
         Position = UDim2.new(1, -100, 0, 10),
         Size = UDim2.fromOffset(86, 20),
-        Font = Enum.Font.GothamMedium,
+        FontFace = fontFace("Medium"),
         Text = tostring(value) .. tostring(options.Suffix),
         TextColor3 = Theme.Accent,
         TextSize = 12,
@@ -1151,7 +1314,7 @@ function SectionMethods:AddDropdown(options)
         BackgroundTransparency = 1,
         Position = UDim2.new(0, 10, 0, 0),
         Size = UDim2.new(1, -38, 1, 0),
-        Font = Enum.Font.Gotham,
+        FontFace = fontFace("Regular"),
         Text = "Select...",
         TextColor3 = Theme.TextMuted,
         TextTransparency = 0.08,
@@ -1255,7 +1418,7 @@ function SectionMethods:AddDropdown(options)
                 BackgroundTransparency = 1,
                 Position = UDim2.new(0, 10, 0, 0),
                 Size = UDim2.new(1, -40, 1, 0),
-                Font = Enum.Font.Gotham,
+                FontFace = fontFace("Regular"),
                 Text = tostring(valueName),
                 TextColor3 = Theme.Text,
                 TextSize = 11,
@@ -1368,7 +1531,7 @@ function SectionMethods:AddInput(options)
         BackgroundColor3 = Theme.Surface3,
         BorderSizePixel = 0,
         ClearTextOnFocus = options.ClearOnFocus == true,
-        Font = Enum.Font.Gotham,
+        FontFace = fontFace("Regular"),
         PlaceholderColor3 = Theme.TextDim,
         PlaceholderText = options.Placeholder,
         Position = UDim2.new(1, -190, 0.5, -16),
@@ -1520,7 +1683,7 @@ function SectionMethods:AddParagraph(options)
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(30, 0),
         Size = UDim2.new(1, -30, 0, 22),
-        Font = Enum.Font.GothamMedium,
+        FontFace = fontFace("Medium"),
         Text = options.Title,
         TextColor3 = Theme.Text,
         TextSize = 14,
@@ -1534,7 +1697,7 @@ function SectionMethods:AddParagraph(options)
         Position = UDim2.fromOffset(30, 30),
         Size = UDim2.new(1, -30, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
-        Font = Enum.Font.Gotham,
+        FontFace = fontFace("Regular"),
         Text = options.Content,
         TextColor3 = Theme.TextMuted,
         TextTransparency = 0,
@@ -1591,7 +1754,7 @@ function SectionMethods:AddDivider(text)
             BorderSizePixel = 0,
             Position = UDim2.fromScale(0.5, 0.5),
             Size = UDim2.fromOffset(0, 18),
-            Font = Enum.Font.Gotham,
+            FontFace = fontFace("Regular"),
             Text = "  " .. tostring(text) .. "  ",
             TextColor3 = Theme.TextDim,
             TextSize = 11,
@@ -1632,7 +1795,7 @@ function TabMethods:AddSection(options)
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(2, 0),
         Size = UDim2.new(1, -4, 0, 22),
-        Font = Enum.Font.GothamSemibold,
+        FontFace = fontFace("SemiBold"),
         Text = options.Title,
         TextColor3 = Theme.Text,
         TextSize = 14,
@@ -1645,7 +1808,7 @@ function TabMethods:AddSection(options)
             BackgroundTransparency = 1,
             Position = UDim2.fromOffset(2, 22),
             Size = UDim2.new(1, -4, 0, 18),
-            Font = Enum.Font.Gotham,
+            FontFace = fontFace("Regular"),
             Text = options.Desc,
             TextColor3 = Theme.TextMuted,
             TextTransparency = 0,
@@ -2085,7 +2248,7 @@ function WindowMethods:AddTab(options)
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(41, 0),
         Size = UDim2.new(1, -51, 1, 0),
-        Font = Enum.Font.GothamMedium,
+        FontFace = fontFace("Medium"),
         Text = options.Title,
         TextColor3 = Theme.TextMuted,
         TextSize = 12,
@@ -2230,7 +2393,7 @@ function WindowMethods:Notify(options)
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(28, 0),
         Size = UDim2.new(1, -28, 0, 20),
-        Font = Enum.Font.GothamSemibold,
+        FontFace = fontFace("SemiBold"),
         Text = options.Title,
         TextColor3 = Theme.Text,
         TextSize = 15,
@@ -2244,7 +2407,7 @@ function WindowMethods:Notify(options)
         Position = UDim2.fromOffset(28, 25),
         Size = UDim2.new(1, -28, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
-        Font = Enum.Font.Gotham,
+        FontFace = fontFace("Regular"),
         Text = options.Content,
         TextColor3 = Theme.TextMuted,
         TextSize = 12,
@@ -2459,10 +2622,13 @@ function VoltzUI:CreateWindow(options)
         ToggleKey = Enum.KeyCode.RightShift,
         MobileButton = true,
         Acrylic = false,
+        Font = "NotoSansThai",
         Config = {
             Enabled = false,
         },
     }, options)
+
+    self:SetFont(options.Font or "NotoSansThai")
 
     local config = normalizeConfigOptions(options.Config)
     local loadedConfig = nil
@@ -2481,10 +2647,9 @@ function VoltzUI:CreateWindow(options)
 
     loadExternalIcons()
 
-    local previous = getGuiParent():FindFirstChild("VoltzUI")
-    if previous then
-        previous:Destroy()
-    end
+    -- Clear stale windows from gethui/CoreGui/PlayerGui before creating a new one.
+    -- This prevents an older build from remaining visible after a loader error.
+    destroyPreviousVoltzUI()
 
     local screenGui = create("ScreenGui", {
         Name = "VoltzUI",
@@ -2611,7 +2776,7 @@ function VoltzUI:CreateWindow(options)
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(58, 7),
         Size = UDim2.new(1, -180, 0, 21),
-        Font = Enum.Font.GothamSemibold,
+        FontFace = fontFace("SemiBold"),
         Text = options.Title,
         TextColor3 = Theme.Text,
         TextSize = 16,
@@ -2624,7 +2789,7 @@ function VoltzUI:CreateWindow(options)
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(58, 27),
         Size = UDim2.new(1, -180, 0, 17),
-        Font = Enum.Font.Gotham,
+        FontFace = fontFace("Regular"),
         Text = options.Subtitle,
         TextColor3 = Theme.TextDim,
         TextSize = 10,
@@ -2718,7 +2883,7 @@ function VoltzUI:CreateWindow(options)
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(14, 12),
         Size = UDim2.new(1, -28, 0, 18),
-        Font = Enum.Font.GothamMedium,
+        FontFace = fontFace("Medium"),
         Text = "NAVIGATION",
         TextColor3 = Theme.TextDim,
         TextSize = 10,
@@ -2779,7 +2944,7 @@ function VoltzUI:CreateWindow(options)
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(22, 16),
         Size = UDim2.new(1, -40, 0, 22),
-        Font = Enum.Font.GothamSemibold,
+        FontFace = fontFace("SemiBold"),
         Text = "Tab",
         TextColor3 = Theme.Text,
         TextSize = 15,
@@ -2792,7 +2957,7 @@ function VoltzUI:CreateWindow(options)
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(22, 39),
         Size = UDim2.new(1, -40, 0, 17),
-        Font = Enum.Font.Gotham,
+        FontFace = fontFace("Regular"),
         Text = "",
         TextColor3 = Theme.TextDim,
         TextSize = 11,
@@ -2934,5 +3099,6 @@ SectionMethods.Divider = SectionMethods.AddDivider
 
 VoltzUI.Theme = Theme
 VoltzUI.LoadIcons = loadExternalIcons
+VoltzUI.SetFontFamily = VoltzUI.SetFont
 
 return VoltzUI
