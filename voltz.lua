@@ -1,9 +1,12 @@
+-- BUILD: VOLTZUI-1.2.2-FLAT-CARDS-20260707
 --[[
     VoltzUI - Clean Roblox UI Library
+    BUILD: VOLTZUI-1.2.2-FLAT-CARDS-20260707
     Theme: clean dark + blue accent
     External icons: https://github.com/Footagesus/Icons
 
     Designed for client-side Roblox/Luau environments that support HttpGet + loadstring.
+    Includes persistent flags/config support through executor file APIs.
     In Studio, you can inject your own compatible icon provider with VoltzUI:SetIconProvider(provider).
 ]]
 
@@ -12,11 +15,12 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.0.0",
+    Version = "1.2.2",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -32,15 +36,20 @@ local ICON_PACK_URLS = {
 
 local Theme = {
     Accent = Color3.fromRGB(50, 180, 253),
-    AccentDark = Color3.fromRGB(26, 126, 184),
-    Background = Color3.fromRGB(14, 17, 22),
-    Surface = Color3.fromRGB(20, 24, 31),
-    Surface2 = Color3.fromRGB(27, 32, 41),
-    Surface3 = Color3.fromRGB(34, 40, 50),
-    Border = Color3.fromRGB(48, 56, 69),
-    Text = Color3.fromRGB(241, 245, 249),
-    TextMuted = Color3.fromRGB(148, 163, 184),
-    TextDim = Color3.fromRGB(100, 116, 139),
+    AccentLight = Color3.fromRGB(123, 216, 255),
+    AccentDark = Color3.fromRGB(34, 145, 214),
+
+    Background = Color3.fromRGB(12, 16, 22),
+    Surface = Color3.fromRGB(17, 22, 30),
+    Surface2 = Color3.fromRGB(28, 35, 46),
+    Surface3 = Color3.fromRGB(38, 47, 60),
+    SurfaceHover = Color3.fromRGB(34, 43, 56),
+    Border = Color3.fromRGB(57, 70, 87),
+
+    Text = Color3.fromRGB(248, 250, 252),
+    TextMuted = Color3.fromRGB(184, 196, 212),
+    TextDim = Color3.fromRGB(136, 151, 171),
+
     Success = Color3.fromRGB(74, 222, 128),
     Danger = Color3.fromRGB(248, 113, 113),
     Warning = Color3.fromRGB(250, 204, 21),
@@ -52,6 +61,213 @@ local function cloneTable(source)
         result[key] = value
     end
     return result
+end
+
+local function deepClone(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local result = {}
+    for key, item in pairs(value) do
+        result[deepClone(key)] = deepClone(item)
+    end
+    return result
+end
+
+local function sanitizeName(value, fallback)
+    local result = tostring(value or fallback or "default")
+    result = result:gsub("[^%w%._%-]", "_")
+    if result == "" then
+        result = fallback or "default"
+    end
+    return result
+end
+
+local function buildConfigPath(folder, fileName)
+    local safeFolder = sanitizeName(folder or "voltz", "voltz")
+    local safeName = sanitizeName(fileName or "settings", "settings")
+    return safeFolder .. "/" .. safeName .. ".json", safeName
+end
+
+local function listConfigNames(folder)
+    local names = {}
+    if type(listfiles) == "function" then
+        local ok, files = pcall(listfiles, folder)
+        if ok and type(files) == "table" then
+            for _, filePath in ipairs(files) do
+                local normalized = tostring(filePath):gsub(string.char(92), "/")
+                local name = normalized:match("([^/]+)%.json$")
+                if name and name ~= "" then
+                    names[name] = true
+                end
+            end
+        end
+    end
+
+    local result = {}
+    for name in pairs(names) do
+        table.insert(result, name)
+    end
+    table.sort(result, function(a, b)
+        return tostring(a):lower() < tostring(b):lower()
+    end)
+    return result
+end
+
+local function normalizeConfigOptions(raw)
+    if raw == true then
+        raw = { Enabled = true }
+    elseif type(raw) ~= "table" then
+        raw = {}
+    end
+
+    local folder = sanitizeName(raw.Folder or "voltz", "voltz")
+    local fileName = sanitizeName(raw.FileName or raw.Name or "settings", "settings")
+    local path = buildConfigPath(folder, fileName)
+
+    local config = {
+        Enabled = raw.Enabled == true,
+        Folder = folder,
+        FileName = fileName,
+        AutoLoad = raw.AutoLoad ~= false,
+        AutoSave = raw.AutoSave ~= false,
+        SaveWindowPosition = raw.SaveWindowPosition ~= false,
+        SaveSelectedTab = raw.SaveSelectedTab ~= false,
+        SaveMinimized = raw.SaveMinimized == true,
+        AutoSaveDelay = math.max(tonumber(raw.AutoSaveDelay) or 0.35, 0.1),
+    }
+
+    config.Path = path
+    return config
+end
+
+local function fileSystemAvailable()
+    return type(readfile) == "function"
+        and type(writefile) == "function"
+        and type(isfile) == "function"
+end
+
+local function ensureFolder(folder)
+    if folder == "" then
+        return true
+    end
+
+    if type(isfolder) == "function" then
+        local ok, exists = pcall(isfolder, folder)
+        if ok and exists then
+            return true
+        end
+    end
+
+    if type(makefolder) == "function" then
+        local ok = pcall(makefolder, folder)
+        return ok
+    end
+
+    return false
+end
+
+local function serializeValue(value)
+    local valueType = typeof(value)
+
+    if valueType == "EnumItem" then
+        return {
+            __voltzType = "EnumItem",
+            EnumType = tostring(value.EnumType),
+            Name = value.Name,
+        }
+    elseif valueType == "Color3" then
+        return {
+            __voltzType = "Color3",
+            R = value.R,
+            G = value.G,
+            B = value.B,
+        }
+    elseif valueType == "UDim2" then
+        return {
+            __voltzType = "UDim2",
+            XS = value.X.Scale,
+            XO = value.X.Offset,
+            YS = value.Y.Scale,
+            YO = value.Y.Offset,
+        }
+    elseif valueType == "Vector2" then
+        return {
+            __voltzType = "Vector2",
+            X = value.X,
+            Y = value.Y,
+        }
+    elseif type(value) == "table" then
+        local result = {}
+        for key, item in pairs(value) do
+            result[tostring(key)] = serializeValue(item)
+        end
+        return result
+    end
+
+    return value
+end
+
+local function deserializeValue(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    if value.__voltzType == "EnumItem" then
+        local enumName = tostring(value.EnumType or ""):match("Enum%.(.+)")
+        local enumType = enumName and Enum[enumName]
+        if enumType and value.Name then
+            return enumType[value.Name]
+        end
+        return nil
+    elseif value.__voltzType == "Color3" then
+        return Color3.new(tonumber(value.R) or 0, tonumber(value.G) or 0, tonumber(value.B) or 0)
+    elseif value.__voltzType == "UDim2" then
+        return UDim2.new(
+            tonumber(value.XS) or 0,
+            tonumber(value.XO) or 0,
+            tonumber(value.YS) or 0,
+            tonumber(value.YO) or 0
+        )
+    elseif value.__voltzType == "Vector2" then
+        return Vector2.new(tonumber(value.X) or 0, tonumber(value.Y) or 0)
+    end
+
+    local result = {}
+    for key, item in pairs(value) do
+        result[key] = deserializeValue(item)
+    end
+    return result
+end
+
+local function readConfigData(config)
+    if not config.Enabled then
+        return nil, "Config is disabled"
+    end
+
+    if not fileSystemAvailable() then
+        return nil, "Executor file functions are unavailable"
+    end
+
+    local existsOk, exists = pcall(isfile, config.Path)
+    if not existsOk or not exists then
+        return nil, "Config file does not exist"
+    end
+
+    local readOk, source = pcall(readfile, config.Path)
+    if not readOk or type(source) ~= "string" or source == "" then
+        return nil, "Unable to read config file"
+    end
+
+    local decodeOk, decoded = pcall(function()
+        return HttpService:JSONDecode(source)
+    end)
+    if not decodeOk or type(decoded) ~= "table" then
+        return nil, "Config JSON is invalid"
+    end
+
+    return decoded
 end
 
 local function merge(defaults, options)
@@ -503,7 +719,7 @@ local function createIcon(parent, iconName, size, color, zIndex)
     return iconObject
 end
 
-local function dragify(handle, target)
+local function dragify(handle, target, changedCallback, endedCallback)
     local dragging = false
     local dragInput
     local dragStart
@@ -518,7 +734,11 @@ local function dragify(handle, target)
 
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
+                    local wasDragging = dragging
                     dragging = false
+                    if wasDragging and type(endedCallback) == "function" then
+                        endedCallback(target.Position)
+                    end
                 end
             end)
         end
@@ -540,6 +760,9 @@ local function dragify(handle, target)
                 startPosition.Y.Scale,
                 startPosition.Y.Offset + delta.Y
             )
+            if type(changedCallback) == "function" then
+                changedCallback(target.Position)
+            end
         end
     end)
 end
@@ -578,25 +801,24 @@ local function createElementBase(section, options, height)
         Name = options.Title,
         BackgroundColor3 = Theme.Surface2,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, height or (options.Desc and 62 or 52)),
+        Size = UDim2.new(1, 0, 0, height or (options.Desc and 66 or 56)),
         ClipsDescendants = true,
         Parent = section.Container,
     })
-    corner(frame, 9)
-    local frameStroke = stroke(frame, Theme.Border, 0.35, 1)
+    corner(frame, 13)
 
-    local leftOffset = 14
+    local leftOffset = 15
     local iconObject
     if options.Icon then
         iconObject = createIcon(frame, options.Icon, 18, Theme.TextMuted, 3)
-        iconObject.Frame.Position = UDim2.new(0, 14, 0.5, -9)
-        leftOffset = 43
+        iconObject.Frame.Position = UDim2.new(0, 15, 0.5, -9)
+        leftOffset = 44
     end
 
     local title = create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, leftOffset, 0, options.Desc and 10 or 0),
-        Size = UDim2.new(1, -(leftOffset + 110), options.Desc and 0 or 1, options.Desc and 20 or 0),
+        Position = UDim2.new(0, leftOffset, 0, options.Desc and 11 or 0),
+        Size = UDim2.new(1, -(leftOffset + 112), options.Desc and 0 or 1, options.Desc and 21 or 0),
         Font = Enum.Font.GothamMedium,
         Text = options.Title,
         TextColor3 = Theme.Text,
@@ -611,25 +833,28 @@ local function createElementBase(section, options, height)
     if options.Desc then
         description = create("TextLabel", {
             BackgroundTransparency = 1,
-            Position = UDim2.new(0, leftOffset, 0, 31),
-            Size = UDim2.new(1, -(leftOffset + 110), 0, 17),
+            Position = UDim2.new(0, leftOffset, 0, 34),
+            Size = UDim2.new(1, -(leftOffset + 112), 0, 18),
             Font = Enum.Font.Gotham,
             Text = options.Desc,
-            TextColor3 = Theme.TextDim,
+            TextColor3 = Theme.TextMuted,
+            TextTransparency = 0,
             TextSize = 11,
             TextTruncate = Enum.TextTruncate.AtEnd,
             TextXAlignment = Enum.TextXAlignment.Left,
+            TextYAlignment = Enum.TextYAlignment.Center,
             Parent = frame,
             ZIndex = 3,
         })
     end
 
+    -- No UIStroke here: the previous outline was the "sunken border" visible around every card.
     frame.MouseEnter:Connect(function()
-        tween(frameStroke, 0.14, { Transparency = 0, Color = Theme.Surface3 })
+        tween(frame, 0.16, { BackgroundColor3 = Theme.SurfaceHover })
     end)
 
     frame.MouseLeave:Connect(function()
-        tween(frameStroke, 0.14, { Transparency = 0.35, Color = Theme.Border })
+        tween(frame, 0.16, { BackgroundColor3 = Theme.Surface2 })
     end)
 
     return {
@@ -655,20 +880,20 @@ function SectionMethods:AddButton(options)
     local base = createElementBase(self, options)
     local action = createTextButton({
         BackgroundColor3 = Theme.Surface3,
-        Position = UDim2.new(1, -94, 0.5, -16),
-        Size = UDim2.fromOffset(80, 32),
+        Position = UDim2.new(1, -96, 0.5, -17),
+        Size = UDim2.fromOffset(84, 34),
         Text = options.ButtonText or "Run",
         Parent = base.Frame,
         ZIndex = 4,
     })
-    corner(action, 8)
+    corner(action, 10)
     bindHover(action, Theme.Surface3, Theme.AccentDark)
 
     action.MouseButton1Click:Connect(function()
-        tween(action, 0.08, { Size = UDim2.fromOffset(76, 30), Position = UDim2.new(1, -92, 0.5, -15) })
+        tween(action, 0.08, { Size = UDim2.fromOffset(80, 32), Position = UDim2.new(1, -92, 0.5, -15) })
         task.delay(0.08, function()
             if action.Parent then
-                tween(action, 0.1, { Size = UDim2.fromOffset(80, 32), Position = UDim2.new(1, -94, 0.5, -16) })
+                tween(action, 0.1, { Size = UDim2.fromOffset(84, 34), Position = UDim2.new(1, -94, 0.5, -16) })
             end
         end)
         safeCallback(options.Callback)
@@ -701,8 +926,8 @@ function SectionMethods:AddToggle(options)
 
     local toggleButton = createTextButton({
         BackgroundColor3 = state and Theme.Accent or Theme.Surface3,
-        Position = UDim2.new(1, -62, 0.5, -13),
-        Size = UDim2.fromOffset(48, 26),
+        Position = UDim2.new(1, -64, 0.5, -14),
+        Size = UDim2.fromOffset(50, 28),
         Parent = base.Frame,
         ZIndex = 4,
     })
@@ -711,8 +936,8 @@ function SectionMethods:AddToggle(options)
     local knob = create("Frame", {
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
         BorderSizePixel = 0,
-        Position = state and UDim2.new(1, -23, 0.5, -9) or UDim2.new(0, 5, 0.5, -9),
-        Size = UDim2.fromOffset(18, 18),
+        Position = state and UDim2.new(1, -25, 0.5, -10) or UDim2.new(0, 4, 0.5, -10),
+        Size = UDim2.fromOffset(20, 20),
         Parent = toggleButton,
         ZIndex = 5,
     })
@@ -726,7 +951,7 @@ function SectionMethods:AddToggle(options)
             BackgroundColor3 = state and Theme.Accent or Theme.Surface3,
         })
         tween(knob, 0.2, {
-            Position = state and UDim2.new(1, -23, 0.5, -9) or UDim2.new(0, 5, 0.5, -9),
+            Position = state and UDim2.new(1, -25, 0.5, -10) or UDim2.new(0, 4, 0.5, -10),
         }, Enum.EasingStyle.Back)
 
         if not silent then
@@ -746,7 +971,7 @@ function SectionMethods:AddToggle(options)
         controller:Set(not state)
     end)
 
-    return controller
+    return self.Tab.Window:_RegisterControl(self, options, controller, options.Default, "toggle")
 end
 
 function SectionMethods:AddSlider(options)
@@ -787,7 +1012,7 @@ function SectionMethods:AddSlider(options)
         BackgroundColor3 = Theme.Surface3,
         BorderSizePixel = 0,
         Position = UDim2.new(0, 14, 1, -19),
-        Size = UDim2.new(1, -28, 0, 6),
+        Size = UDim2.new(1, -28, 0, 7),
         Parent = base.Frame,
         ZIndex = 4,
     })
@@ -807,7 +1032,7 @@ function SectionMethods:AddSlider(options)
         BackgroundColor3 = Color3.fromRGB(255, 255, 255),
         BorderSizePixel = 0,
         Position = UDim2.new(0, 0, 0.5, 0),
-        Size = UDim2.fromOffset(14, 14),
+        Size = UDim2.fromOffset(16, 16),
         Parent = bar,
         ZIndex = 6,
     })
@@ -882,7 +1107,7 @@ function SectionMethods:AddSlider(options)
     end)
 
     controller:Set(value, true)
-    return controller
+    return self.Tab.Window:_RegisterControl(self, options, controller, options.Default, "slider")
 end
 
 function SectionMethods:AddDropdown(options)
@@ -912,11 +1137,11 @@ function SectionMethods:AddDropdown(options)
     local selector = createTextButton({
         BackgroundColor3 = Theme.Surface3,
         Position = UDim2.new(1, -170, 0, 10),
-        Size = UDim2.fromOffset(156, 32),
+        Size = UDim2.fromOffset(156, 34),
         Parent = base.Frame,
         ZIndex = 5,
     })
-    corner(selector, 8)
+    corner(selector, 10)
 
     local selectedLabel = create("TextLabel", {
         BackgroundTransparency = 1,
@@ -925,7 +1150,8 @@ function SectionMethods:AddDropdown(options)
         Font = Enum.Font.Gotham,
         Text = "Select...",
         TextColor3 = Theme.TextMuted,
-        TextSize = 11,
+        TextTransparency = 0.08,
+        TextSize = 12,
         TextTruncate = Enum.TextTruncate.AtEnd,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = selector,
@@ -945,7 +1171,7 @@ function SectionMethods:AddDropdown(options)
         Position = UDim2.new(0, 14, 0, collapsedHeight + 8),
         Size = UDim2.new(1, -28, 0, 0),
         ScrollBarThickness = 2,
-        ScrollBarImageColor3 = Theme.Accent,
+        ScrollBarImageColor3 = Theme.Border,
         Visible = false,
         Parent = base.Frame,
         ZIndex = 6,
@@ -992,7 +1218,7 @@ function SectionMethods:AddDropdown(options)
     local function setOpen(value)
         open = value == true
         local visibleCount = math.min(#values, 5)
-        local listHeight = visibleCount > 0 and (visibleCount * 33 + math.max(visibleCount - 1, 0) * 5) or 0
+        local listHeight = visibleCount > 0 and (visibleCount * 35 + math.max(visibleCount - 1, 0) * 5) or 0
         list.Visible = open
         list.Size = UDim2.new(1, -28, 0, listHeight)
         tween(base.Frame, 0.2, {
@@ -1014,12 +1240,12 @@ function SectionMethods:AddDropdown(options)
         for index, valueName in ipairs(values) do
             local optionButton = createTextButton({
                 BackgroundColor3 = Theme.Surface3,
-                Size = UDim2.new(1, 0, 0, 33),
+                Size = UDim2.new(1, 0, 0, 35),
                 LayoutOrder = index,
                 Parent = list,
                 ZIndex = 7,
             })
-            corner(optionButton, 7)
+            corner(optionButton, 9)
 
             create("TextLabel", {
                 BackgroundTransparency = 1,
@@ -1049,11 +1275,17 @@ function SectionMethods:AddDropdown(options)
                     selected[valueName] = not selected[valueName]
                     refreshVisuals()
                     safeCallback(options.Callback, cloneTable(selected))
+                    if controller._Commit then
+                        controller:_Commit()
+                    end
                 else
                     selected = valueName
                     refreshVisuals()
                     setOpen(false)
                     safeCallback(options.Callback, selected)
+                    if controller._Commit then
+                        controller:_Commit()
+                    end
                 end
             end)
         end
@@ -1112,7 +1344,7 @@ function SectionMethods:AddDropdown(options)
     end)
 
     rebuild()
-    return controller
+    return self.Tab.Window:_RegisterControl(self, options, controller, options.Default, options.Multi and "multi-dropdown" or "dropdown")
 end
 
 function SectionMethods:AddInput(options)
@@ -1136,17 +1368,17 @@ function SectionMethods:AddInput(options)
         PlaceholderColor3 = Theme.TextDim,
         PlaceholderText = options.Placeholder,
         Position = UDim2.new(1, -190, 0.5, -16),
-        Size = UDim2.fromOffset(176, 32),
+        Size = UDim2.fromOffset(176, 34),
         Text = tostring(options.Default or ""),
         TextColor3 = Theme.Text,
-        TextSize = 11,
+        TextSize = 12,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = base.Frame,
         ZIndex = 4,
     })
-    corner(box, 8)
+    corner(box, 10)
     padding(box, 10, 10, 0, 0)
-    local boxStroke = stroke(box, Theme.Border, 0.3, 1)
+    local boxStroke = stroke(box, Theme.Border, 0.16, 1)
 
     box.Focused:Connect(function()
         tween(boxStroke, 0.15, { Color = Theme.Accent, Transparency = 0 })
@@ -1166,7 +1398,9 @@ function SectionMethods:AddInput(options)
         end)
     end
 
-    local controller = {}
+    local controller = {
+        _Box = box,
+    }
     function controller:Set(value, silent)
         box.Text = tostring(value or "")
         if not silent then
@@ -1182,7 +1416,7 @@ function SectionMethods:AddInput(options)
     function controller:Destroy()
         base.Frame:Destroy()
     end
-    return controller
+    return self.Tab.Window:_RegisterControl(self, options, controller, options.Default, "input")
 end
 
 function SectionMethods:AddKeybind(options)
@@ -1202,16 +1436,19 @@ function SectionMethods:AddKeybind(options)
     local keyButton = createTextButton({
         BackgroundColor3 = Theme.Surface3,
         Position = UDim2.new(1, -116, 0.5, -16),
-        Size = UDim2.fromOffset(102, 32),
+        Size = UDim2.fromOffset(104, 34),
         Text = currentKey and currentKey.Name or "None",
         Parent = base.Frame,
         ZIndex = 4,
     })
-    corner(keyButton, 8)
+    corner(keyButton, 10)
 
     local controller = {}
 
     function controller:Set(keyCode, silent)
+        if type(keyCode) == "string" then
+            keyCode = Enum.KeyCode[keyCode]
+        end
         currentKey = keyCode
         keyButton.Text = currentKey and currentKey.Name or "None"
         if not silent then
@@ -1248,7 +1485,7 @@ function SectionMethods:AddKeybind(options)
         end
     end)
 
-    return controller
+    return self.Tab.Window:_RegisterControl(self, options, controller, options.Default, "keybind")
 end
 
 function SectionMethods:AddParagraph(options)
@@ -1265,21 +1502,20 @@ function SectionMethods:AddParagraph(options)
     local frame = create("Frame", {
         BackgroundColor3 = Theme.Surface2,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 72),
+        Size = UDim2.new(1, 0, 0, 76),
         AutomaticSize = Enum.AutomaticSize.Y,
         Parent = self.Container,
     })
-    corner(frame, 9)
-    stroke(frame, Theme.Border, 0.35, 1)
-    padding(frame, 14, 14, 12, 12)
+    corner(frame, 13)
+    padding(frame, 15, 15, 13, 13)
 
     local iconObject = createIcon(frame, options.Icon, 18, Theme.Accent, 3)
     iconObject.Frame.Position = UDim2.fromOffset(0, 1)
 
     local title = create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(28, 0),
-        Size = UDim2.new(1, -28, 0, 20),
+        Position = UDim2.fromOffset(29, 0),
+        Size = UDim2.new(1, -29, 0, 21),
         Font = Enum.Font.GothamMedium,
         Text = options.Title,
         TextColor3 = Theme.Text,
@@ -1291,12 +1527,13 @@ function SectionMethods:AddParagraph(options)
 
     local content = create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(28, 27),
-        Size = UDim2.new(1, -28, 0, 0),
+        Position = UDim2.fromOffset(29, 28),
+        Size = UDim2.new(1, -29, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         Font = Enum.Font.Gotham,
         Text = options.Content,
         TextColor3 = Theme.TextMuted,
+        TextTransparency = 0,
         TextSize = 11,
         TextWrapped = true,
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -1304,6 +1541,14 @@ function SectionMethods:AddParagraph(options)
         Parent = frame,
         ZIndex = 3,
     })
+
+    frame.MouseEnter:Connect(function()
+        tween(frame, 0.16, { BackgroundColor3 = Theme.SurfaceHover })
+    end)
+
+    frame.MouseLeave:Connect(function()
+        tween(frame, 0.16, { BackgroundColor3 = Theme.Surface2 })
+    end)
 
     local controller = {}
     function controller:SetTitle(text)
@@ -1345,7 +1590,7 @@ function SectionMethods:AddDivider(text)
             Font = Enum.Font.Gotham,
             Text = "  " .. tostring(text) .. "  ",
             TextColor3 = Theme.TextDim,
-            TextSize = 10,
+            TextSize = 11,
             Parent = frame,
             ZIndex = 2,
         })
@@ -1371,7 +1616,7 @@ function TabMethods:AddSection(options)
 
     local sectionFrame = create("Frame", {
         Name = options.Title,
-        BackgroundColor3 = Theme.Surface,
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
         Size = UDim2.new(1, 0, 0, 48),
         AutomaticSize = Enum.AutomaticSize.Y,
@@ -1386,7 +1631,7 @@ function TabMethods:AddSection(options)
         Font = Enum.Font.GothamSemibold,
         Text = options.Title,
         TextColor3 = Theme.Text,
-        TextSize = 13,
+        TextSize = 15,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = sectionFrame,
     })
@@ -1398,8 +1643,9 @@ function TabMethods:AddSection(options)
             Size = UDim2.new(1, -4, 0, 18),
             Font = Enum.Font.Gotham,
             Text = options.Desc,
-            TextColor3 = Theme.TextDim,
-            TextSize = 10,
+            TextColor3 = Theme.TextMuted,
+            TextTransparency = 0.15,
+            TextSize = 12,
             TextXAlignment = Enum.TextXAlignment.Left,
             Parent = sectionFrame,
         })
@@ -1414,7 +1660,7 @@ function TabMethods:AddSection(options)
     })
 
     create("UIListLayout", {
-        Padding = UDim.new(0, 8),
+        Padding = UDim.new(0, 9),
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = container,
     })
@@ -1428,6 +1674,7 @@ function TabMethods:AddSection(options)
         Frame = sectionFrame,
         Container = container,
         TitleLabel = title,
+        Title = options.Title,
         Tab = self,
     }, SectionMethods)
 
@@ -1468,6 +1715,303 @@ end
 local WindowMethods = {}
 WindowMethods.__index = WindowMethods
 
+function WindowMethods:_BuildFlag(section, options)
+    local requested = options.Flag
+    local base = requested or table.concat({
+        tostring(section.Tab.Title or "Tab"),
+        tostring(section.Title or "Section"),
+        tostring(options.Title or "Control"),
+    }, ".")
+
+    base = sanitizeName(base, "Control")
+    local flag = base
+    local index = 2
+    while self.Controls[flag] do
+        flag = base .. "_" .. tostring(index)
+        index = index + 1
+    end
+    return flag
+end
+
+function WindowMethods:_QueueAutoSave()
+    if not self.Config.Enabled
+        or not self.Config.AutoSave
+        or self._LoadingConfig
+        or self._Initializing then
+        return
+    end
+
+    self._SaveToken = (self._SaveToken or 0) + 1
+    local token = self._SaveToken
+    task.delay(self.Config.AutoSaveDelay, function()
+        if self.ScreenGui and self.ScreenGui.Parent and token == self._SaveToken then
+            self:SaveConfig()
+        end
+    end)
+end
+
+function WindowMethods:_StoreControl(flag, value)
+    if not flag then
+        return
+    end
+
+    self.Flags[flag] = deepClone(value)
+    self:_QueueAutoSave()
+end
+
+function WindowMethods:_RegisterControl(section, options, controller, defaultValue, controlType)
+    local flag = self:_BuildFlag(section, options)
+    local originalSet = controller.Set
+    local window = self
+
+    controller.Flag = flag
+    controller.Type = controlType
+
+    function controller:Set(value, silent)
+        originalSet(self, value, silent)
+        window:_StoreControl(flag, self:Get())
+    end
+
+    function controller:_Commit()
+        window:_StoreControl(flag, self:Get())
+    end
+
+    self.Controls[flag] = {
+        Controller = controller,
+        Default = deepClone(defaultValue),
+        Save = options.Save ~= false,
+        Type = controlType,
+    }
+    self.Flags[flag] = deepClone(controller:Get())
+
+    if controller._Box then
+        controller._Box:GetPropertyChangedSignal("Text"):Connect(function()
+            if controller._Commit then
+                controller:_Commit()
+            end
+        end)
+    end
+
+    local savedValues = self.LoadedConfig and self.LoadedConfig.Values
+    if self.Config.AutoLoad and type(savedValues) == "table" and savedValues[flag] ~= nil then
+        self._LoadingConfig = true
+        controller:Set(deserializeValue(savedValues[flag]), false)
+        self._LoadingConfig = false
+    end
+
+    return controller
+end
+
+function WindowMethods:SetAutoSave(value)
+    self.Config.AutoSave = value == true
+    if self.Config.AutoSave then
+        self:_QueueAutoSave()
+    end
+end
+
+function WindowMethods:SetConfigName(name)
+    local path, safeName = buildConfigPath(self.Config.Folder, name or self.Config.FileName)
+    self.Config.FileName = safeName
+    self.Config.Path = path
+    return safeName, path
+end
+
+function WindowMethods:GetConfigName()
+    return self.Config.FileName
+end
+
+function WindowMethods:GetConfigList()
+    local names = listConfigNames(self.Config.Folder)
+    if self.Config.FileName and self.Config.FileName ~= "" then
+        local found = false
+        for _, item in ipairs(names) do
+            if item == self.Config.FileName then
+                found = true
+                break
+            end
+        end
+        if not found then
+            table.insert(names, self.Config.FileName)
+            table.sort(names, function(a, b)
+                return tostring(a):lower() < tostring(b):lower()
+            end)
+        end
+    end
+    return names
+end
+
+function WindowMethods:RefreshConfigList()
+    return self:GetConfigList()
+end
+
+function WindowMethods:GetFlag(flag)
+    return deepClone(self.Flags[flag])
+end
+
+function WindowMethods:SetFlag(flag, value, silent)
+    local data = self.Controls[flag]
+    if not data then
+        return false, "Unknown flag: " .. tostring(flag)
+    end
+
+    data.Controller:Set(value, silent == true)
+    return true
+end
+
+function WindowMethods:GetFlags()
+    return deepClone(self.Flags)
+end
+
+function WindowMethods:SaveConfig(configName)
+    if not self.Config.Enabled then
+        return false, "Config is disabled"
+    end
+    if configName ~= nil then
+        self:SetConfigName(configName)
+    end
+
+    if configName ~= nil then
+        self:SetConfigName(configName)
+    end
+
+    if not fileSystemAvailable() then
+        return false, "Executor does not support readfile/writefile/isfile"
+    end
+
+    ensureFolder(self.Config.Folder)
+
+    local values = {}
+    for flag, data in pairs(self.Controls) do
+        if data.Save ~= false then
+            values[flag] = serializeValue(data.Controller:Get())
+        end
+    end
+
+    local windowData = {}
+    if self.Config.SaveWindowPosition then
+        windowData.Position = serializeValue(self.Main.Position)
+    end
+    if self.Config.SaveSelectedTab and self.SelectedTab then
+        windowData.SelectedTab = self.SelectedTab.Title
+    end
+    if self.Config.SaveMinimized then
+        windowData.Minimized = self.Minimized
+    end
+
+    local payload = {
+        Version = 1,
+        LibraryVersion = VoltzUI.Version,
+        Values = values,
+        Window = windowData,
+    }
+
+    local encodeOk, encoded = pcall(function()
+        return HttpService:JSONEncode(payload)
+    end)
+    if not encodeOk then
+        return false, "Unable to encode config: " .. tostring(encoded)
+    end
+
+    local writeOk, writeError = pcall(writefile, self.Config.Path, encoded)
+    if not writeOk then
+        return false, "Unable to write config: " .. tostring(writeError)
+    end
+
+    self.LoadedConfig = payload
+    return true, self.Config.Path
+end
+
+function WindowMethods:LoadConfig(configName)
+    if configName ~= nil then
+        self:SetConfigName(configName)
+    end
+
+    local data, readError = readConfigData(self.Config)
+    if not data then
+        return false, readError
+    end
+
+    self.LoadedConfig = data
+    self._LoadingConfig = true
+
+    local values = type(data.Values) == "table" and data.Values or {}
+    for flag, controlData in pairs(self.Controls) do
+        if values[flag] ~= nil then
+            controlData.Controller:Set(deserializeValue(values[flag]), false)
+        end
+    end
+
+    local windowData = type(data.Window) == "table" and data.Window or {}
+    if self.Config.SaveWindowPosition and windowData.Position then
+        local position = deserializeValue(windowData.Position)
+        if typeof(position) == "UDim2" then
+            self.Main.Position = position
+            if self.Shadow then
+                self.Shadow.Position = UDim2.new(
+                    position.X.Scale,
+                    position.X.Offset,
+                    position.Y.Scale,
+                    position.Y.Offset + 8
+                )
+            end
+        end
+    end
+
+    if self.Config.SaveSelectedTab and windowData.SelectedTab then
+        self.PendingSelectedTab = tostring(windowData.SelectedTab)
+        for _, tab in ipairs(self.Tabs) do
+            if tab.Title == self.PendingSelectedTab then
+                self:SelectTab(tab)
+                break
+            end
+        end
+    end
+
+    if self.Config.SaveMinimized and windowData.Minimized ~= nil then
+        self:Minimize(windowData.Minimized == true)
+    end
+
+    self._LoadingConfig = false
+    return true, self.Config.Path
+end
+
+function WindowMethods:ResetConfig(saveAfterReset)
+    self._LoadingConfig = true
+    for flag, data in pairs(self.Controls) do
+        if data.Save ~= false then
+            data.Controller:Set(deepClone(data.Default), false)
+            self.Flags[flag] = deepClone(data.Controller:Get())
+        end
+    end
+    self._LoadingConfig = false
+
+    if saveAfterReset ~= false then
+        return self:SaveConfig()
+    end
+    return true
+end
+
+function WindowMethods:DeleteConfig(configName)
+    if not self.Config.Enabled then
+        return false, "Config is disabled"
+    end
+    if configName ~= nil then
+        self:SetConfigName(configName)
+    end
+    if type(delfile) ~= "function" or type(isfile) ~= "function" then
+        return false, "Executor does not support delfile/isfile"
+    end
+
+    local existsOk, exists = pcall(isfile, self.Config.Path)
+    if existsOk and exists then
+        local deleteOk, deleteError = pcall(delfile, self.Config.Path)
+        if not deleteOk then
+            return false, tostring(deleteError)
+        end
+    end
+    return true
+end
+
 function WindowMethods:SelectTab(tab)
     if self.SelectedTab == tab then
         return
@@ -1477,7 +2021,7 @@ function WindowMethods:SelectTab(tab)
         local selected = item == tab
         item.Page.Visible = selected
         tween(item.Button, 0.15, {
-            BackgroundColor3 = selected and Theme.Surface3 or Theme.Surface,
+            BackgroundColor3 = selected and Theme.Surface2 or Theme.Surface,
             BackgroundTransparency = selected and 0 or 1,
         })
         tween(item.Indicator, 0.15, {
@@ -1493,6 +2037,9 @@ function WindowMethods:SelectTab(tab)
     self.ActiveTitle.Text = tab.Title
     self.ActiveDescription.Text = tab.Description or ""
     self.ActiveDescription.Visible = tab.Description ~= nil and tab.Description ~= ""
+    if not self._LoadingConfig then
+        self:_QueueAutoSave()
+    end
 end
 
 function WindowMethods:AddTab(options)
@@ -1513,7 +2060,7 @@ function WindowMethods:AddTab(options)
         Parent = self.TabList,
         ZIndex = 5,
     })
-    corner(button, 8)
+    corner(button, 11)
 
     local indicator = create("Frame", {
         AnchorPoint = Vector2.new(0, 0.5),
@@ -1551,13 +2098,13 @@ function WindowMethods:AddTab(options)
         AutomaticCanvasSize = Enum.AutomaticSize.Y,
         Position = UDim2.new(),
         Size = UDim2.fromScale(1, 1),
-        ScrollBarThickness = 3,
-        ScrollBarImageColor3 = Theme.Accent,
+        ScrollBarThickness = 2,
+        ScrollBarImageColor3 = Theme.Border,
         Visible = false,
         Parent = self.PageContainer,
         ZIndex = 3,
     })
-    padding(page, 0, 7, 0, 18)
+    padding(page, 2, 10, 0, 18)
 
     create("UIListLayout", {
         Padding = UDim.new(0, 16),
@@ -1594,7 +2141,9 @@ function WindowMethods:AddTab(options)
         end
     end)
 
-    if not self.SelectedTab then
+    if self.PendingSelectedTab and self.PendingSelectedTab == tab.Title then
+        self:SelectTab(tab)
+    elseif not self.SelectedTab then
         self:SelectTab(tab)
     end
 
@@ -1620,9 +2169,16 @@ function WindowMethods:Minimize(value)
 
     self.Minimized = value == true
     self.Body.Visible = not self.Minimized
+    local targetSize = self.Minimized and UDim2.fromOffset(self.Size.X.Offset, 50) or self.Size
     tween(self.Main, 0.22, {
-        Size = self.Minimized and UDim2.fromOffset(self.Size.X.Offset, 50) or self.Size,
+        Size = targetSize,
     }, Enum.EasingStyle.Quint)
+    if self.Shadow then
+        tween(self.Shadow, 0.22, { Size = targetSize }, Enum.EasingStyle.Quint)
+    end
+    if not self._LoadingConfig then
+        self:_QueueAutoSave()
+    end
 end
 
 function WindowMethods:SetToggleKey(keyCode)
@@ -1659,8 +2215,8 @@ function WindowMethods:Notify(options)
         Parent = self.NotificationList,
         ZIndex = 100,
     })
-    corner(card, 10)
-    stroke(card, Theme.Border, 0.1, 1)
+    corner(card, 12)
+    stroke(card, Theme.Border, 0.14, 1)
     padding(card, 14, 14, 12, 12)
 
     local iconObject = createIcon(card, options.Icon, 18, accent, 102)
@@ -1673,7 +2229,7 @@ function WindowMethods:Notify(options)
         Font = Enum.Font.GothamSemibold,
         Text = options.Title,
         TextColor3 = Theme.Text,
-        TextSize = 13,
+        TextSize = 15,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = card,
         ZIndex = 102,
@@ -1687,7 +2243,7 @@ function WindowMethods:Notify(options)
         Font = Enum.Font.Gotham,
         Text = options.Content,
         TextColor3 = Theme.TextMuted,
-        TextSize = 11,
+        TextSize = 12,
         TextWrapped = true,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = card,
@@ -1711,6 +2267,178 @@ function WindowMethods:Notify(options)
     end)
 end
 
+function WindowMethods:AddConfigSection(tab, options)
+    options = merge({
+        Title = "Configuration",
+        Desc = "Save, load and manage multiple VoltzUI configs",
+    }, options)
+
+    local section = tab:AddSection({
+        Title = options.Title,
+        Desc = options.Desc,
+    })
+
+    local status = section:AddParagraph({
+        Title = self.Config.Enabled and "Config ready" or "Config disabled",
+        Content = self.Config.Enabled
+            and ("Folder: " .. self.Config.Folder .. "\nActive: " .. self.Config.FileName)
+            or "Enable Config in CreateWindow to save settings.",
+        Icon = self.Config.Enabled and "database" or "circle-off",
+    })
+
+    local configNameInput
+    local configListDropdown
+
+    local function refreshStatus(titleText, contentText)
+        status:SetTitle(titleText)
+        status:SetContent(contentText)
+    end
+
+    local function showResult(title, success, message)
+        refreshStatus(
+            success and title or (title .. " failed"),
+            self.Config.Enabled
+                and ((tostring(message or "Done")) .. "\nActive: " .. self.Config.FileName)
+                or tostring(message or "Done")
+        )
+        self:Notify({
+            Title = title,
+            Content = tostring(message or "Done"),
+            Type = success and "Success" or "Error",
+            Icon = success and "circle-check" or "circle-x",
+        })
+    end
+
+    local function currentTypedName()
+        local raw = configNameInput and configNameInput:Get() or self.Config.FileName
+        local safe = sanitizeName(raw, self.Config.FileName or "settings")
+        return safe
+    end
+
+    local function refreshConfigDropdown(selectName)
+        if not configListDropdown then
+            return
+        end
+        local names = self:RefreshConfigList()
+        if #names == 0 and currentTypedName() ~= "" then
+            names = { currentTypedName() }
+        end
+        configListDropdown:SetValues(names)
+        local target = selectName or self.Config.FileName or names[1]
+        if target then
+            configListDropdown:Set(target, true)
+        end
+    end
+
+    configListDropdown = section:AddDropdown({
+        Title = "Saved configs",
+        Desc = "Choose a config file from your saved list",
+        Icon = "folder-open",
+        Values = self:RefreshConfigList(),
+        Default = self.Config.FileName,
+        Save = false,
+        Callback = function(value)
+            if value and value ~= "" then
+                self:SetConfigName(value)
+                if configNameInput then
+                    configNameInput:Set(value, true)
+                end
+                refreshStatus("Config selected", "Folder: " .. self.Config.Folder .. "\nActive: " .. self.Config.FileName)
+            end
+        end,
+    })
+
+    configNameInput = section:AddInput({
+        Title = "Config name",
+        Desc = "Type the name you want to save or load as",
+        Icon = "text-cursor-input",
+        Default = self.Config.FileName,
+        Placeholder = "example_config",
+        Save = false,
+        Callback = function(text)
+            local name = sanitizeName(text, self.Config.FileName or "settings")
+            self:SetConfigName(name)
+            refreshStatus("Config selected", "Folder: " .. self.Config.Folder .. "\nActive: " .. self.Config.FileName)
+        end,
+    })
+
+    section:AddButton({
+        Title = "Save config",
+        Desc = "Save the current values into the typed config name",
+        Icon = "save",
+        ButtonText = "Save",
+        Callback = function()
+            local name = currentTypedName()
+            local success, message = self:SaveConfig(name)
+            if success then
+                if configNameInput then
+                    configNameInput:Set(self.Config.FileName, true)
+                end
+                refreshConfigDropdown(self.Config.FileName)
+            end
+            showResult("Config saved", success, message)
+        end,
+    })
+
+    section:AddButton({
+        Title = "Load config",
+        Desc = "Load the selected config from the dropdown",
+        Icon = "download",
+        ButtonText = "Load",
+        Callback = function()
+            local selected = configListDropdown and configListDropdown:Get() or currentTypedName()
+            local success, message = self:LoadConfig(selected)
+            if success then
+                if configNameInput then
+                    configNameInput:Set(self.Config.FileName, true)
+                end
+                refreshConfigDropdown(self.Config.FileName)
+            end
+            showResult("Config loaded", success, message)
+        end,
+    })
+
+    section:AddButton({
+        Title = "Refresh list",
+        Desc = "Reload the dropdown from files inside your config folder",
+        Icon = "refresh-cw",
+        ButtonText = "Refresh",
+        Callback = function()
+            refreshConfigDropdown(self.Config.FileName)
+            showResult("Config list refreshed", true, self.Config.Folder)
+        end,
+    })
+
+    section:AddButton({
+        Title = "Delete config",
+        Desc = "Delete the selected config file from disk",
+        Icon = "trash-2",
+        ButtonText = "Delete",
+        Callback = function()
+            local selected = configListDropdown and configListDropdown:Get() or currentTypedName()
+            local success, message = self:DeleteConfig(selected)
+            if success then
+                refreshConfigDropdown(currentTypedName())
+            end
+            showResult("Config deleted", success, message)
+        end,
+    })
+
+    section:AddButton({
+        Title = "Reset defaults",
+        Desc = "Restore all saved controls to their default values",
+        Icon = "rotate-ccw",
+        ButtonText = "Reset",
+        Callback = function()
+            local success, message = self:ResetConfig(false)
+            showResult("Defaults restored", success, message)
+        end,
+    })
+
+    refreshConfigDropdown(self.Config.FileName)
+    return section
+end
+
 function WindowMethods:Destroy()
     if self.InputConnection then
         self.InputConnection:Disconnect()
@@ -1727,7 +2455,25 @@ function VoltzUI:CreateWindow(options)
         ToggleKey = Enum.KeyCode.RightShift,
         MobileButton = true,
         Acrylic = false,
+        Config = {
+            Enabled = false,
+        },
     }, options)
+
+    local config = normalizeConfigOptions(options.Config)
+    local loadedConfig = nil
+    if config.Enabled and config.AutoLoad then
+        loadedConfig = readConfigData(config)
+    end
+
+    local initialPosition = UDim2.fromScale(0.5, 0.5)
+    local initialWindowData = loadedConfig and loadedConfig.Window
+    if config.SaveWindowPosition and type(initialWindowData) == "table" and initialWindowData.Position then
+        local savedPosition = deserializeValue(initialWindowData.Position)
+        if typeof(savedPosition) == "UDim2" then
+            initialPosition = savedPosition
+        end
+    end
 
     loadExternalIcons()
 
@@ -1752,22 +2498,43 @@ function VoltzUI:CreateWindow(options)
         Parent = screenGui,
     })
 
+    local shadow = create("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BackgroundTransparency = 0.5,
+        BorderSizePixel = 0,
+        Position = UDim2.new(
+            initialPosition.X.Scale,
+            initialPosition.X.Offset,
+            initialPosition.Y.Scale,
+            initialPosition.Y.Offset + 8
+        ),
+        Size = options.Size,
+        Parent = root,
+        ZIndex = 1,
+    })
+    corner(shadow, 20)
+
     local main = create("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundColor3 = Theme.Background,
         BorderSizePixel = 0,
-        Position = UDim2.fromScale(0.5, 0.5),
+        Position = initialPosition,
         Size = options.Size,
         ClipsDescendants = true,
         Parent = root,
         ZIndex = 2,
     })
-    corner(main, 13)
-    stroke(main, Theme.Border, 0.05, 1)
+    corner(main, 18)
+    stroke(main, Theme.Border, 0.08, 1)
 
     local uiScale = create("UIScale", {
         Scale = 1,
         Parent = main,
+    })
+    local shadowScale = create("UIScale", {
+        Scale = 1,
+        Parent = shadow,
     })
 
     local function updateScale()
@@ -1778,7 +2545,9 @@ function VoltzUI:CreateWindow(options)
         local viewport = camera.ViewportSize
         local desiredWidth = options.Size.X.Offset + 40
         local desiredHeight = options.Size.Y.Offset + 40
-        uiScale.Scale = math.min(1, viewport.X / desiredWidth, viewport.Y / desiredHeight)
+        local scale = math.min(1, viewport.X / desiredWidth, viewport.Y / desiredHeight)
+        uiScale.Scale = scale
+        shadowScale.Scale = scale
     end
 
     updateScale()
@@ -1789,9 +2558,17 @@ function VoltzUI:CreateWindow(options)
     local topbar = create("Frame", {
         BackgroundColor3 = Theme.Surface,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 50),
+        Size = UDim2.new(1, 0, 0, 54),
         Parent = main,
         ZIndex = 5,
+    })
+    create("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Theme.Surface2),
+            ColorSequenceKeypoint.new(1, Theme.Surface),
+        }),
+        Rotation = 90,
+        Parent = topbar,
     })
 
     create("Frame", {
@@ -1807,24 +2584,24 @@ function VoltzUI:CreateWindow(options)
     local logoBox = create("Frame", {
         BackgroundColor3 = Theme.AccentDark,
         BorderSizePixel = 0,
-        Position = UDim2.fromOffset(14, 10),
-        Size = UDim2.fromOffset(30, 30),
+        Position = UDim2.fromOffset(14, 11),
+        Size = UDim2.fromOffset(32, 32),
         Parent = topbar,
         ZIndex = 7,
     })
-    corner(logoBox, 8)
+    corner(logoBox, 10)
     local logo = createIcon(logoBox, options.Icon, 17, Color3.fromRGB(255, 255, 255), 8)
     logo.Frame.AnchorPoint = Vector2.new(0.5, 0.5)
     logo.Frame.Position = UDim2.fromScale(0.5, 0.5)
 
     create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(54, 6),
+        Position = UDim2.fromOffset(58, 7),
         Size = UDim2.new(1, -180, 0, 21),
         Font = Enum.Font.GothamSemibold,
         Text = options.Title,
         TextColor3 = Theme.Text,
-        TextSize = 14,
+        TextSize = 16,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = topbar,
         ZIndex = 7,
@@ -1832,7 +2609,7 @@ function VoltzUI:CreateWindow(options)
 
     create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(54, 25),
+        Position = UDim2.fromOffset(58, 27),
         Size = UDim2.new(1, -180, 0, 17),
         Font = Enum.Font.Gotham,
         Text = options.Subtitle,
@@ -1845,12 +2622,12 @@ function VoltzUI:CreateWindow(options)
 
     local minimizeButton = createTextButton({
         BackgroundColor3 = Theme.Surface2,
-        Position = UDim2.new(1, -82, 0, 10),
-        Size = UDim2.fromOffset(30, 30),
+        Position = UDim2.new(1, -86, 0, 11),
+        Size = UDim2.fromOffset(32, 32),
         Parent = topbar,
         ZIndex = 8,
     })
-    corner(minimizeButton, 8)
+    corner(minimizeButton, 10)
     local minimizeIcon = createIcon(minimizeButton, "minus", 15, Theme.TextMuted, 9)
     minimizeIcon.Frame.AnchorPoint = Vector2.new(0.5, 0.5)
     minimizeIcon.Frame.Position = UDim2.fromScale(0.5, 0.5)
@@ -1858,12 +2635,12 @@ function VoltzUI:CreateWindow(options)
 
     local closeButton = createTextButton({
         BackgroundColor3 = Theme.Surface2,
-        Position = UDim2.new(1, -44, 0, 10),
-        Size = UDim2.fromOffset(30, 30),
+        Position = UDim2.new(1, -46, 0, 11),
+        Size = UDim2.fromOffset(32, 32),
         Parent = topbar,
         ZIndex = 8,
     })
-    corner(closeButton, 8)
+    corner(closeButton, 10)
     local closeIcon = createIcon(closeButton, "x", 15, Theme.TextMuted, 9)
     closeIcon.Frame.AnchorPoint = Vector2.new(0.5, 0.5)
     closeIcon.Frame.Position = UDim2.fromScale(0.5, 0.5)
@@ -1878,8 +2655,8 @@ function VoltzUI:CreateWindow(options)
 
     local body = create("Frame", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(0, 50),
-        Size = UDim2.new(1, 0, 1, -50),
+        Position = UDim2.fromOffset(0, 54),
+        Size = UDim2.new(1, 0, 1, -54),
         Parent = main,
         ZIndex = 3,
     })
@@ -1887,7 +2664,7 @@ function VoltzUI:CreateWindow(options)
     local sidebar = create("Frame", {
         BackgroundColor3 = Theme.Surface,
         BorderSizePixel = 0,
-        Size = UDim2.new(0, 178, 1, 0),
+        Size = UDim2.new(0, 176, 1, 0),
         Parent = body,
         ZIndex = 4,
     })
@@ -1909,7 +2686,7 @@ function VoltzUI:CreateWindow(options)
         Font = Enum.Font.GothamMedium,
         Text = "NAVIGATION",
         TextColor3 = Theme.TextDim,
-        TextSize = 9,
+        TextSize = 10,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = sidebar,
         ZIndex = 5,
@@ -1936,15 +2713,15 @@ function VoltzUI:CreateWindow(options)
     local content = create("Frame", {
         BackgroundColor3 = Theme.Background,
         BorderSizePixel = 0,
-        Position = UDim2.fromOffset(178, 0),
-        Size = UDim2.new(1, -178, 1, 0),
+        Position = UDim2.fromOffset(176, 0),
+        Size = UDim2.new(1, -176, 1, 0),
         Parent = body,
         ZIndex = 3,
     })
 
     local activeTitle = create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(20, 14),
+        Position = UDim2.fromOffset(22, 16),
         Size = UDim2.new(1, -40, 0, 22),
         Font = Enum.Font.GothamSemibold,
         Text = "Tab",
@@ -1957,12 +2734,12 @@ function VoltzUI:CreateWindow(options)
 
     local activeDescription = create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(20, 36),
+        Position = UDim2.fromOffset(22, 39),
         Size = UDim2.new(1, -40, 0, 17),
         Font = Enum.Font.Gotham,
         Text = "",
         TextColor3 = Theme.TextDim,
-        TextSize = 10,
+        TextSize = 11,
         TextXAlignment = Enum.TextXAlignment.Left,
         Visible = false,
         Parent = content,
@@ -1971,8 +2748,8 @@ function VoltzUI:CreateWindow(options)
 
     local pageContainer = create("Frame", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(20, 61),
-        Size = UDim2.new(1, -40, 1, -61),
+        Position = UDim2.fromOffset(22, 66),
+        Size = UDim2.new(1, -44, 1, -66),
         ClipsDescendants = true,
         Parent = content,
         ZIndex = 3,
@@ -1996,6 +2773,7 @@ function VoltzUI:CreateWindow(options)
     local window = setmetatable({
         ScreenGui = screenGui,
         Root = root,
+        Shadow = shadow,
         Main = main,
         Body = body,
         Topbar = topbar,
@@ -2011,6 +2789,14 @@ function VoltzUI:CreateWindow(options)
         Size = options.Size,
         ToggleKey = options.ToggleKey,
         MobileButton = nil,
+        Config = config,
+        LoadedConfig = loadedConfig,
+        PendingSelectedTab = loadedConfig and loadedConfig.Window and loadedConfig.Window.SelectedTab or nil,
+        Controls = {},
+        Flags = {},
+        _LoadingConfig = false,
+        _Initializing = true,
+        _SaveToken = 0,
     }, WindowMethods)
 
     minimizeButton.MouseButton1Click:Connect(function()
@@ -2021,13 +2807,28 @@ function VoltzUI:CreateWindow(options)
         window:SetVisible(false)
     end)
 
-    dragify(topbar, main)
+    dragify(topbar, main, function(position)
+        shadow.Position = UDim2.new(
+            position.X.Scale,
+            position.X.Offset,
+            position.Y.Scale,
+            position.Y.Offset + 8
+        )
+    end, function()
+        window:_QueueAutoSave()
+    end)
 
     window.InputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if not gameProcessed and input.KeyCode == window.ToggleKey then
             window:Toggle()
         end
     end)
+
+    if config.SaveMinimized and loadedConfig and loadedConfig.Window and loadedConfig.Window.Minimized == true then
+        window._LoadingConfig = true
+        window:Minimize(true)
+        window._LoadingConfig = false
+    end
 
     if options.MobileButton and UserInputService.TouchEnabled then
         local mobileButton = createTextButton({
@@ -2039,7 +2840,7 @@ function VoltzUI:CreateWindow(options)
             Parent = screenGui,
             ZIndex = 120,
         })
-        corner(mobileButton, 12)
+        corner(mobileButton, 14)
         stroke(mobileButton, Theme.Accent, 0.1, 1)
         local mobileIcon = createIcon(mobileButton, options.Icon, 22, Color3.fromRGB(255, 255, 255), 121)
         mobileIcon.Frame.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -2051,12 +2852,19 @@ function VoltzUI:CreateWindow(options)
         window.MobileButton = mobileButton
     end
 
+    task.defer(function()
+        if window.ScreenGui and window.ScreenGui.Parent then
+            window._Initializing = false
+        end
+    end)
+
     return window
 end
 
 -- Friendly aliases: both AddButton(...) and Button(...) styles are supported.
 WindowMethods.CreateTab = WindowMethods.AddTab
 WindowMethods.Notification = WindowMethods.Notify
+WindowMethods.ConfigSection = WindowMethods.AddConfigSection
 WindowMethods.SetVisibility = WindowMethods.SetVisible
 TabMethods.CreateSection = TabMethods.AddSection
 SectionMethods.Button = SectionMethods.AddButton
