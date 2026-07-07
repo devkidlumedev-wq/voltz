@@ -1,7 +1,7 @@
--- BUILD: VOLTZUI-1.2.8-THAI-TYPOGRAPHY-20260707
+-- BUILD: VOLTZUI-1.2.9-DROPDOWN-ICON-FIX-20260707
 --[[
     VoltzUI - Clean Roblox UI Library
-    BUILD: VOLTZUI-1.2.7-THAI-FONT-20260707
+    BUILD: VOLTZUI-1.2.9-DROPDOWN-ICON-FIX-20260707
     Theme: clean dark + blue accent
     External icons: https://github.com/Footagesus/Icons
 
@@ -20,7 +20,8 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.2.8",
+    Version = "1.2.9",
+    Build = "VOLTZUI-1.2.9-DROPDOWN-ICON-FIX-20260707",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -1318,6 +1319,17 @@ function SectionMethods:AddDropdown(options)
 
     local collapsedHeight = options.Desc and 62 or 52
     local base = createElementBase(self, options, collapsedHeight)
+
+    -- Keep the left-side control icon anchored to the collapsed header.
+    -- The dropdown frame grows when opened; using Y.Scale = 0.5 would
+    -- recenter the icon against the expanded frame and make it move down.
+    if base.Icon and base.Icon.Frame then
+        base.Icon.Frame.Position = UDim2.fromOffset(
+            16,
+            math.floor((collapsedHeight - base.Icon.Frame.Size.Y.Offset) / 2)
+        )
+    end
+
     local open = false
     local values = options.Values or {}
     local selected = options.Multi and {} or options.Default
