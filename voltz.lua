@@ -4,6 +4,7 @@
     External icons: https://github.com/Footagesus/Icons
 
     Designed for client-side Roblox/Luau environments that support HttpGet + loadstring.
+    Includes persistent flags/config support through executor file APIs.
     In Studio, you can inject your own compatible icon provider with VoltzUI:SetIconProvider(provider).
 ]]
 
@@ -12,11 +13,12 @@ local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
+local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.0.0",
+    Version = "1.1.0",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -32,15 +34,17 @@ local ICON_PACK_URLS = {
 
 local Theme = {
     Accent = Color3.fromRGB(50, 180, 253),
-    AccentDark = Color3.fromRGB(26, 126, 184),
-    Background = Color3.fromRGB(14, 17, 22),
-    Surface = Color3.fromRGB(20, 24, 31),
-    Surface2 = Color3.fromRGB(27, 32, 41),
-    Surface3 = Color3.fromRGB(34, 40, 50),
-    Border = Color3.fromRGB(48, 56, 69),
-    Text = Color3.fromRGB(241, 245, 249),
-    TextMuted = Color3.fromRGB(148, 163, 184),
-    TextDim = Color3.fromRGB(100, 116, 139),
+    AccentLight = Color3.fromRGB(105, 205, 255),
+    AccentDark = Color3.fromRGB(27, 139, 205),
+    Background = Color3.fromRGB(17, 21, 28),
+    Surface = Color3.fromRGB(23, 29, 38),
+    Surface2 = Color3.fromRGB(31, 38, 49),
+    Surface3 = Color3.fromRGB(41, 49, 63),
+    SurfaceHover = Color3.fromRGB(47, 57, 73),
+    Border = Color3.fromRGB(67, 79, 98),
+    Text = Color3.fromRGB(248, 250, 252),
+    TextMuted = Color3.fromRGB(181, 194, 211),
+    TextDim = Color3.fromRGB(126, 143, 166),
     Success = Color3.fromRGB(74, 222, 128),
     Danger = Color3.fromRGB(248, 113, 113),
     Warning = Color3.fromRGB(250, 204, 21),
@@ -52,6 +56,178 @@ local function cloneTable(source)
         result[key] = value
     end
     return result
+end
+
+local function deepClone(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    local result = {}
+    for key, item in pairs(value) do
+        result[deepClone(key)] = deepClone(item)
+    end
+    return result
+end
+
+local function sanitizeName(value, fallback)
+    local result = tostring(value or fallback or "default")
+    result = result:gsub("[^%w%._%-]", "_")
+    if result == "" then
+        result = fallback or "default"
+    end
+    return result
+end
+
+local function normalizeConfigOptions(raw)
+    if raw == true then
+        raw = { Enabled = true }
+    elseif type(raw) ~= "table" then
+        raw = {}
+    end
+
+    local config = {
+        Enabled = raw.Enabled == true,
+        Folder = sanitizeName(raw.Folder or "voltz", "voltz"),
+        FileName = sanitizeName(raw.FileName or raw.Name or "settings", "settings"),
+        AutoLoad = raw.AutoLoad ~= false,
+        AutoSave = raw.AutoSave ~= false,
+        SaveWindowPosition = raw.SaveWindowPosition ~= false,
+        SaveSelectedTab = raw.SaveSelectedTab ~= false,
+        SaveMinimized = raw.SaveMinimized == true,
+        AutoSaveDelay = math.max(tonumber(raw.AutoSaveDelay) or 0.35, 0.1),
+    }
+
+    config.Path = config.Folder .. "/" .. config.FileName .. ".json"
+    return config
+end
+
+local function fileSystemAvailable()
+    return type(readfile) == "function"
+        and type(writefile) == "function"
+        and type(isfile) == "function"
+end
+
+local function ensureFolder(folder)
+    if folder == "" then
+        return true
+    end
+
+    if type(isfolder) == "function" then
+        local ok, exists = pcall(isfolder, folder)
+        if ok and exists then
+            return true
+        end
+    end
+
+    if type(makefolder) == "function" then
+        local ok = pcall(makefolder, folder)
+        return ok
+    end
+
+    return false
+end
+
+local function serializeValue(value)
+    local valueType = typeof(value)
+
+    if valueType == "EnumItem" then
+        return {
+            __voltzType = "EnumItem",
+            EnumType = tostring(value.EnumType),
+            Name = value.Name,
+        }
+    elseif valueType == "Color3" then
+        return {
+            __voltzType = "Color3",
+            R = value.R,
+            G = value.G,
+            B = value.B,
+        }
+    elseif valueType == "UDim2" then
+        return {
+            __voltzType = "UDim2",
+            XS = value.X.Scale,
+            XO = value.X.Offset,
+            YS = value.Y.Scale,
+            YO = value.Y.Offset,
+        }
+    elseif valueType == "Vector2" then
+        return {
+            __voltzType = "Vector2",
+            X = value.X,
+            Y = value.Y,
+        }
+    elseif type(value) == "table" then
+        local result = {}
+        for key, item in pairs(value) do
+            result[tostring(key)] = serializeValue(item)
+        end
+        return result
+    end
+
+    return value
+end
+
+local function deserializeValue(value)
+    if type(value) ~= "table" then
+        return value
+    end
+
+    if value.__voltzType == "EnumItem" then
+        local enumName = tostring(value.EnumType or ""):match("Enum%.(.+)")
+        local enumType = enumName and Enum[enumName]
+        if enumType and value.Name then
+            return enumType[value.Name]
+        end
+        return nil
+    elseif value.__voltzType == "Color3" then
+        return Color3.new(tonumber(value.R) or 0, tonumber(value.G) or 0, tonumber(value.B) or 0)
+    elseif value.__voltzType == "UDim2" then
+        return UDim2.new(
+            tonumber(value.XS) or 0,
+            tonumber(value.XO) or 0,
+            tonumber(value.YS) or 0,
+            tonumber(value.YO) or 0
+        )
+    elseif value.__voltzType == "Vector2" then
+        return Vector2.new(tonumber(value.X) or 0, tonumber(value.Y) or 0)
+    end
+
+    local result = {}
+    for key, item in pairs(value) do
+        result[key] = deserializeValue(item)
+    end
+    return result
+end
+
+local function readConfigData(config)
+    if not config.Enabled then
+        return nil, "Config is disabled"
+    end
+
+    if not fileSystemAvailable() then
+        return nil, "Executor file functions are unavailable"
+    end
+
+    local existsOk, exists = pcall(isfile, config.Path)
+    if not existsOk or not exists then
+        return nil, "Config file does not exist"
+    end
+
+    local readOk, source = pcall(readfile, config.Path)
+    if not readOk or type(source) ~= "string" or source == "" then
+        return nil, "Unable to read config file"
+    end
+
+    local decodeOk, decoded = pcall(function()
+        return HttpService:JSONDecode(source)
+    end)
+    if not decodeOk or type(decoded) ~= "table" then
+        return nil, "Config JSON is invalid"
+    end
+
+    return decoded
 end
 
 local function merge(defaults, options)
@@ -503,7 +679,7 @@ local function createIcon(parent, iconName, size, color, zIndex)
     return iconObject
 end
 
-local function dragify(handle, target)
+local function dragify(handle, target, changedCallback, endedCallback)
     local dragging = false
     local dragInput
     local dragStart
@@ -518,7 +694,11 @@ local function dragify(handle, target)
 
             input.Changed:Connect(function()
                 if input.UserInputState == Enum.UserInputState.End then
+                    local wasDragging = dragging
                     dragging = false
+                    if wasDragging and type(endedCallback) == "function" then
+                        endedCallback(target.Position)
+                    end
                 end
             end)
         end
@@ -540,6 +720,9 @@ local function dragify(handle, target)
                 startPosition.Y.Scale,
                 startPosition.Y.Offset + delta.Y
             )
+            if type(changedCallback) == "function" then
+                changedCallback(target.Position)
+            end
         end
     end)
 end
@@ -583,7 +766,7 @@ local function createElementBase(section, options, height)
         Parent = section.Container,
     })
     corner(frame, 9)
-    local frameStroke = stroke(frame, Theme.Border, 0.35, 1)
+    local frameStroke = stroke(frame, Theme.Border, 0.12, 1)
 
     local leftOffset = 14
     local iconObject
@@ -615,7 +798,7 @@ local function createElementBase(section, options, height)
             Size = UDim2.new(1, -(leftOffset + 110), 0, 17),
             Font = Enum.Font.Gotham,
             Text = options.Desc,
-            TextColor3 = Theme.TextDim,
+            TextColor3 = Theme.TextMuted,
             TextSize = 11,
             TextTruncate = Enum.TextTruncate.AtEnd,
             TextXAlignment = Enum.TextXAlignment.Left,
@@ -625,11 +808,13 @@ local function createElementBase(section, options, height)
     end
 
     frame.MouseEnter:Connect(function()
-        tween(frameStroke, 0.14, { Transparency = 0, Color = Theme.Surface3 })
+        tween(frame, 0.14, { BackgroundColor3 = Theme.SurfaceHover })
+        tween(frameStroke, 0.14, { Transparency = 0.28, Color = Theme.Accent })
     end)
 
     frame.MouseLeave:Connect(function()
-        tween(frameStroke, 0.14, { Transparency = 0.35, Color = Theme.Border })
+        tween(frame, 0.14, { BackgroundColor3 = Theme.Surface2 })
+        tween(frameStroke, 0.14, { Transparency = 0.12, Color = Theme.Border })
     end)
 
     return {
@@ -746,7 +931,7 @@ function SectionMethods:AddToggle(options)
         controller:Set(not state)
     end)
 
-    return controller
+    return self.Tab.Window:_RegisterControl(self, options, controller, options.Default, "toggle")
 end
 
 function SectionMethods:AddSlider(options)
@@ -882,7 +1067,7 @@ function SectionMethods:AddSlider(options)
     end)
 
     controller:Set(value, true)
-    return controller
+    return self.Tab.Window:_RegisterControl(self, options, controller, options.Default, "slider")
 end
 
 function SectionMethods:AddDropdown(options)
@@ -1049,11 +1234,17 @@ function SectionMethods:AddDropdown(options)
                     selected[valueName] = not selected[valueName]
                     refreshVisuals()
                     safeCallback(options.Callback, cloneTable(selected))
+                    if controller._Commit then
+                        controller:_Commit()
+                    end
                 else
                     selected = valueName
                     refreshVisuals()
                     setOpen(false)
                     safeCallback(options.Callback, selected)
+                    if controller._Commit then
+                        controller:_Commit()
+                    end
                 end
             end)
         end
@@ -1112,7 +1303,7 @@ function SectionMethods:AddDropdown(options)
     end)
 
     rebuild()
-    return controller
+    return self.Tab.Window:_RegisterControl(self, options, controller, options.Default, options.Multi and "multi-dropdown" or "dropdown")
 end
 
 function SectionMethods:AddInput(options)
@@ -1166,7 +1357,9 @@ function SectionMethods:AddInput(options)
         end)
     end
 
-    local controller = {}
+    local controller = {
+        _Box = box,
+    }
     function controller:Set(value, silent)
         box.Text = tostring(value or "")
         if not silent then
@@ -1182,7 +1375,7 @@ function SectionMethods:AddInput(options)
     function controller:Destroy()
         base.Frame:Destroy()
     end
-    return controller
+    return self.Tab.Window:_RegisterControl(self, options, controller, options.Default, "input")
 end
 
 function SectionMethods:AddKeybind(options)
@@ -1212,6 +1405,9 @@ function SectionMethods:AddKeybind(options)
     local controller = {}
 
     function controller:Set(keyCode, silent)
+        if type(keyCode) == "string" then
+            keyCode = Enum.KeyCode[keyCode]
+        end
         currentKey = keyCode
         keyButton.Text = currentKey and currentKey.Name or "None"
         if not silent then
@@ -1248,7 +1444,7 @@ function SectionMethods:AddKeybind(options)
         end
     end)
 
-    return controller
+    return self.Tab.Window:_RegisterControl(self, options, controller, options.Default, "keybind")
 end
 
 function SectionMethods:AddParagraph(options)
@@ -1428,6 +1624,7 @@ function TabMethods:AddSection(options)
         Frame = sectionFrame,
         Container = container,
         TitleLabel = title,
+        Title = options.Title,
         Tab = self,
     }, SectionMethods)
 
@@ -1468,6 +1665,254 @@ end
 local WindowMethods = {}
 WindowMethods.__index = WindowMethods
 
+function WindowMethods:_BuildFlag(section, options)
+    local requested = options.Flag
+    local base = requested or table.concat({
+        tostring(section.Tab.Title or "Tab"),
+        tostring(section.Title or "Section"),
+        tostring(options.Title or "Control"),
+    }, ".")
+
+    base = sanitizeName(base, "Control")
+    local flag = base
+    local index = 2
+    while self.Controls[flag] do
+        flag = base .. "_" .. tostring(index)
+        index = index + 1
+    end
+    return flag
+end
+
+function WindowMethods:_QueueAutoSave()
+    if not self.Config.Enabled
+        or not self.Config.AutoSave
+        or self._LoadingConfig
+        or self._Initializing then
+        return
+    end
+
+    self._SaveToken = (self._SaveToken or 0) + 1
+    local token = self._SaveToken
+    task.delay(self.Config.AutoSaveDelay, function()
+        if self.ScreenGui and self.ScreenGui.Parent and token == self._SaveToken then
+            self:SaveConfig()
+        end
+    end)
+end
+
+function WindowMethods:_StoreControl(flag, value)
+    if not flag then
+        return
+    end
+
+    self.Flags[flag] = deepClone(value)
+    self:_QueueAutoSave()
+end
+
+function WindowMethods:_RegisterControl(section, options, controller, defaultValue, controlType)
+    local flag = self:_BuildFlag(section, options)
+    local originalSet = controller.Set
+    local window = self
+
+    controller.Flag = flag
+    controller.Type = controlType
+
+    function controller:Set(value, silent)
+        originalSet(self, value, silent)
+        window:_StoreControl(flag, self:Get())
+    end
+
+    function controller:_Commit()
+        window:_StoreControl(flag, self:Get())
+    end
+
+    self.Controls[flag] = {
+        Controller = controller,
+        Default = deepClone(defaultValue),
+        Save = options.Save ~= false,
+        Type = controlType,
+    }
+    self.Flags[flag] = deepClone(controller:Get())
+
+    if controller._Box then
+        controller._Box:GetPropertyChangedSignal("Text"):Connect(function()
+            if controller._Commit then
+                controller:_Commit()
+            end
+        end)
+    end
+
+    local savedValues = self.LoadedConfig and self.LoadedConfig.Values
+    if self.Config.AutoLoad and type(savedValues) == "table" and savedValues[flag] ~= nil then
+        self._LoadingConfig = true
+        controller:Set(deserializeValue(savedValues[flag]), false)
+        self._LoadingConfig = false
+    end
+
+    return controller
+end
+
+function WindowMethods:SetAutoSave(value)
+    self.Config.AutoSave = value == true
+    if self.Config.AutoSave then
+        self:_QueueAutoSave()
+    end
+end
+
+function WindowMethods:GetFlag(flag)
+    return deepClone(self.Flags[flag])
+end
+
+function WindowMethods:SetFlag(flag, value, silent)
+    local data = self.Controls[flag]
+    if not data then
+        return false, "Unknown flag: " .. tostring(flag)
+    end
+
+    data.Controller:Set(value, silent == true)
+    return true
+end
+
+function WindowMethods:GetFlags()
+    return deepClone(self.Flags)
+end
+
+function WindowMethods:SaveConfig()
+    if not self.Config.Enabled then
+        return false, "Config is disabled"
+    end
+
+    if not fileSystemAvailable() then
+        return false, "Executor does not support readfile/writefile/isfile"
+    end
+
+    ensureFolder(self.Config.Folder)
+
+    local values = {}
+    for flag, data in pairs(self.Controls) do
+        if data.Save ~= false then
+            values[flag] = serializeValue(data.Controller:Get())
+        end
+    end
+
+    local windowData = {}
+    if self.Config.SaveWindowPosition then
+        windowData.Position = serializeValue(self.Main.Position)
+    end
+    if self.Config.SaveSelectedTab and self.SelectedTab then
+        windowData.SelectedTab = self.SelectedTab.Title
+    end
+    if self.Config.SaveMinimized then
+        windowData.Minimized = self.Minimized
+    end
+
+    local payload = {
+        Version = 1,
+        LibraryVersion = VoltzUI.Version,
+        Values = values,
+        Window = windowData,
+    }
+
+    local encodeOk, encoded = pcall(function()
+        return HttpService:JSONEncode(payload)
+    end)
+    if not encodeOk then
+        return false, "Unable to encode config: " .. tostring(encoded)
+    end
+
+    local writeOk, writeError = pcall(writefile, self.Config.Path, encoded)
+    if not writeOk then
+        return false, "Unable to write config: " .. tostring(writeError)
+    end
+
+    self.LoadedConfig = payload
+    return true, self.Config.Path
+end
+
+function WindowMethods:LoadConfig()
+    local data, readError = readConfigData(self.Config)
+    if not data then
+        return false, readError
+    end
+
+    self.LoadedConfig = data
+    self._LoadingConfig = true
+
+    local values = type(data.Values) == "table" and data.Values or {}
+    for flag, controlData in pairs(self.Controls) do
+        if values[flag] ~= nil then
+            controlData.Controller:Set(deserializeValue(values[flag]), false)
+        end
+    end
+
+    local windowData = type(data.Window) == "table" and data.Window or {}
+    if self.Config.SaveWindowPosition and windowData.Position then
+        local position = deserializeValue(windowData.Position)
+        if typeof(position) == "UDim2" then
+            self.Main.Position = position
+            if self.Shadow then
+                self.Shadow.Position = UDim2.new(
+                    position.X.Scale,
+                    position.X.Offset,
+                    position.Y.Scale,
+                    position.Y.Offset + 8
+                )
+            end
+        end
+    end
+
+    if self.Config.SaveSelectedTab and windowData.SelectedTab then
+        self.PendingSelectedTab = tostring(windowData.SelectedTab)
+        for _, tab in ipairs(self.Tabs) do
+            if tab.Title == self.PendingSelectedTab then
+                self:SelectTab(tab)
+                break
+            end
+        end
+    end
+
+    if self.Config.SaveMinimized and windowData.Minimized ~= nil then
+        self:Minimize(windowData.Minimized == true)
+    end
+
+    self._LoadingConfig = false
+    return true, self.Config.Path
+end
+
+function WindowMethods:ResetConfig(saveAfterReset)
+    self._LoadingConfig = true
+    for flag, data in pairs(self.Controls) do
+        if data.Save ~= false then
+            data.Controller:Set(deepClone(data.Default), false)
+            self.Flags[flag] = deepClone(data.Controller:Get())
+        end
+    end
+    self._LoadingConfig = false
+
+    if saveAfterReset ~= false then
+        return self:SaveConfig()
+    end
+    return true
+end
+
+function WindowMethods:DeleteConfig()
+    if not self.Config.Enabled then
+        return false, "Config is disabled"
+    end
+    if type(delfile) ~= "function" or type(isfile) ~= "function" then
+        return false, "Executor does not support delfile/isfile"
+    end
+
+    local existsOk, exists = pcall(isfile, self.Config.Path)
+    if existsOk and exists then
+        local deleteOk, deleteError = pcall(delfile, self.Config.Path)
+        if not deleteOk then
+            return false, tostring(deleteError)
+        end
+    end
+    return true
+end
+
 function WindowMethods:SelectTab(tab)
     if self.SelectedTab == tab then
         return
@@ -1493,6 +1938,9 @@ function WindowMethods:SelectTab(tab)
     self.ActiveTitle.Text = tab.Title
     self.ActiveDescription.Text = tab.Description or ""
     self.ActiveDescription.Visible = tab.Description ~= nil and tab.Description ~= ""
+    if not self._LoadingConfig then
+        self:_QueueAutoSave()
+    end
 end
 
 function WindowMethods:AddTab(options)
@@ -1594,7 +2042,9 @@ function WindowMethods:AddTab(options)
         end
     end)
 
-    if not self.SelectedTab then
+    if self.PendingSelectedTab and self.PendingSelectedTab == tab.Title then
+        self:SelectTab(tab)
+    elseif not self.SelectedTab then
         self:SelectTab(tab)
     end
 
@@ -1620,9 +2070,16 @@ function WindowMethods:Minimize(value)
 
     self.Minimized = value == true
     self.Body.Visible = not self.Minimized
+    local targetSize = self.Minimized and UDim2.fromOffset(self.Size.X.Offset, 50) or self.Size
     tween(self.Main, 0.22, {
-        Size = self.Minimized and UDim2.fromOffset(self.Size.X.Offset, 50) or self.Size,
+        Size = targetSize,
     }, Enum.EasingStyle.Quint)
+    if self.Shadow then
+        tween(self.Shadow, 0.22, { Size = targetSize }, Enum.EasingStyle.Quint)
+    end
+    if not self._LoadingConfig then
+        self:_QueueAutoSave()
+    end
 end
 
 function WindowMethods:SetToggleKey(keyCode)
@@ -1711,6 +2168,86 @@ function WindowMethods:Notify(options)
     end)
 end
 
+function WindowMethods:AddConfigSection(tab, options)
+    options = merge({
+        Title = "Configuration",
+        Desc = "Save and restore your VoltzUI settings",
+    }, options)
+
+    local section = tab:AddSection({
+        Title = options.Title,
+        Desc = options.Desc,
+    })
+
+    local status = section:AddParagraph({
+        Title = self.Config.Enabled and "Config ready" or "Config disabled",
+        Content = self.Config.Enabled
+            and ("File: " .. self.Config.Path)
+            or "Enable Config in CreateWindow to save settings.",
+        Icon = self.Config.Enabled and "database" or "circle-off",
+    })
+
+    local function showResult(title, success, message)
+        status:SetTitle(success and title or (title .. " failed"))
+        status:SetContent(tostring(message or "Done"))
+        self:Notify({
+            Title = title,
+            Content = tostring(message or "Done"),
+            Type = success and "Success" or "Error",
+            Icon = success and "circle-check" or "circle-x",
+        })
+    end
+
+    section:AddToggle({
+        Title = "Auto Save",
+        Desc = "Save changes automatically after controls are changed",
+        Icon = "save",
+        Default = self.Config.AutoSave,
+        Flag = "__VoltzAutoSave",
+        Save = false,
+        Callback = function(value)
+            self:SetAutoSave(value)
+            status:SetTitle(value and "Auto Save enabled" or "Auto Save disabled")
+            status:SetContent(self.Config.Enabled and ("File: " .. self.Config.Path) or "Config is disabled")
+        end,
+    })
+
+    section:AddButton({
+        Title = "Save now",
+        Desc = "Write every saved Flag to the config file",
+        Icon = "save",
+        ButtonText = "Save",
+        Callback = function()
+            local success, message = self:SaveConfig()
+            showResult("Config saved", success, message)
+        end,
+    })
+
+    section:AddButton({
+        Title = "Load saved",
+        Desc = "Reload values from the config file",
+        Icon = "folder-open",
+        ButtonText = "Load",
+        Callback = function()
+            local success, message = self:LoadConfig()
+            showResult("Config loaded", success, message)
+        end,
+    })
+
+    section:AddButton({
+        Title = "Reset defaults",
+        Desc = "Restore saved controls to their Default values",
+        Icon = "rotate-ccw",
+        ButtonText = "Reset",
+        Callback = function()
+            local success, message = self:ResetConfig(true)
+            showResult("Defaults restored", success, message)
+        end,
+    })
+
+    return section
+end
+
 function WindowMethods:Destroy()
     if self.InputConnection then
         self.InputConnection:Disconnect()
@@ -1727,7 +2264,25 @@ function VoltzUI:CreateWindow(options)
         ToggleKey = Enum.KeyCode.RightShift,
         MobileButton = true,
         Acrylic = false,
+        Config = {
+            Enabled = false,
+        },
     }, options)
+
+    local config = normalizeConfigOptions(options.Config)
+    local loadedConfig = nil
+    if config.Enabled and config.AutoLoad then
+        loadedConfig = readConfigData(config)
+    end
+
+    local initialPosition = UDim2.fromScale(0.5, 0.5)
+    local initialWindowData = loadedConfig and loadedConfig.Window
+    if config.SaveWindowPosition and type(initialWindowData) == "table" and initialWindowData.Position then
+        local savedPosition = deserializeValue(initialWindowData.Position)
+        if typeof(savedPosition) == "UDim2" then
+            initialPosition = savedPosition
+        end
+    end
 
     loadExternalIcons()
 
@@ -1752,22 +2307,43 @@ function VoltzUI:CreateWindow(options)
         Parent = screenGui,
     })
 
+    local shadow = create("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
+        BackgroundTransparency = 0.38,
+        BorderSizePixel = 0,
+        Position = UDim2.new(
+            initialPosition.X.Scale,
+            initialPosition.X.Offset,
+            initialPosition.Y.Scale,
+            initialPosition.Y.Offset + 8
+        ),
+        Size = options.Size,
+        Parent = root,
+        ZIndex = 1,
+    })
+    corner(shadow, 15)
+
     local main = create("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5),
         BackgroundColor3 = Theme.Background,
         BorderSizePixel = 0,
-        Position = UDim2.fromScale(0.5, 0.5),
+        Position = initialPosition,
         Size = options.Size,
         ClipsDescendants = true,
         Parent = root,
         ZIndex = 2,
     })
     corner(main, 13)
-    stroke(main, Theme.Border, 0.05, 1)
+    stroke(main, Theme.Border, 0, 1.2)
 
     local uiScale = create("UIScale", {
         Scale = 1,
         Parent = main,
+    })
+    local shadowScale = create("UIScale", {
+        Scale = 1,
+        Parent = shadow,
     })
 
     local function updateScale()
@@ -1778,7 +2354,9 @@ function VoltzUI:CreateWindow(options)
         local viewport = camera.ViewportSize
         local desiredWidth = options.Size.X.Offset + 40
         local desiredHeight = options.Size.Y.Offset + 40
-        uiScale.Scale = math.min(1, viewport.X / desiredWidth, viewport.Y / desiredHeight)
+        local scale = math.min(1, viewport.X / desiredWidth, viewport.Y / desiredHeight)
+        uiScale.Scale = scale
+        shadowScale.Scale = scale
     end
 
     updateScale()
@@ -1792,6 +2370,23 @@ function VoltzUI:CreateWindow(options)
         Size = UDim2.new(1, 0, 0, 50),
         Parent = main,
         ZIndex = 5,
+    })
+    create("UIGradient", {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Theme.Surface3),
+            ColorSequenceKeypoint.new(1, Theme.Surface),
+        }),
+        Rotation = 90,
+        Parent = topbar,
+    })
+
+    create("Frame", {
+        BackgroundColor3 = Theme.Accent,
+        BackgroundTransparency = 0.12,
+        BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 0, 1),
+        Parent = topbar,
+        ZIndex = 7,
     })
 
     create("Frame", {
@@ -1996,6 +2591,7 @@ function VoltzUI:CreateWindow(options)
     local window = setmetatable({
         ScreenGui = screenGui,
         Root = root,
+        Shadow = shadow,
         Main = main,
         Body = body,
         Topbar = topbar,
@@ -2011,6 +2607,14 @@ function VoltzUI:CreateWindow(options)
         Size = options.Size,
         ToggleKey = options.ToggleKey,
         MobileButton = nil,
+        Config = config,
+        LoadedConfig = loadedConfig,
+        PendingSelectedTab = loadedConfig and loadedConfig.Window and loadedConfig.Window.SelectedTab or nil,
+        Controls = {},
+        Flags = {},
+        _LoadingConfig = false,
+        _Initializing = true,
+        _SaveToken = 0,
     }, WindowMethods)
 
     minimizeButton.MouseButton1Click:Connect(function()
@@ -2021,13 +2625,28 @@ function VoltzUI:CreateWindow(options)
         window:SetVisible(false)
     end)
 
-    dragify(topbar, main)
+    dragify(topbar, main, function(position)
+        shadow.Position = UDim2.new(
+            position.X.Scale,
+            position.X.Offset,
+            position.Y.Scale,
+            position.Y.Offset + 8
+        )
+    end, function()
+        window:_QueueAutoSave()
+    end)
 
     window.InputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if not gameProcessed and input.KeyCode == window.ToggleKey then
             window:Toggle()
         end
     end)
+
+    if config.SaveMinimized and loadedConfig and loadedConfig.Window and loadedConfig.Window.Minimized == true then
+        window._LoadingConfig = true
+        window:Minimize(true)
+        window._LoadingConfig = false
+    end
 
     if options.MobileButton and UserInputService.TouchEnabled then
         local mobileButton = createTextButton({
@@ -2051,12 +2670,19 @@ function VoltzUI:CreateWindow(options)
         window.MobileButton = mobileButton
     end
 
+    task.defer(function()
+        if window.ScreenGui and window.ScreenGui.Parent then
+            window._Initializing = false
+        end
+    end)
+
     return window
 end
 
 -- Friendly aliases: both AddButton(...) and Button(...) styles are supported.
 WindowMethods.CreateTab = WindowMethods.AddTab
 WindowMethods.Notification = WindowMethods.Notify
+WindowMethods.ConfigSection = WindowMethods.AddConfigSection
 WindowMethods.SetVisibility = WindowMethods.SetVisible
 TabMethods.CreateSection = TabMethods.AddSection
 SectionMethods.Button = SectionMethods.AddButton
