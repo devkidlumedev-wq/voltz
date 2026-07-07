@@ -8,8 +8,8 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.4.1",
-    Build = "VOLTZUI-1.4.1-NOTIFY-BOTTOM-RIGHT-20260707",
+    Version = "1.4.2",
+    Build = "VOLTZUI-1.4.2-CONFIG-AUTOLOAD-20260707",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -193,6 +193,17 @@ local LanguageDefinitions = {
         ConfigListRefreshed = "Config list refreshed",
         ConfigDeleted = "Config deleted",
         DefaultsRestored = "Defaults restored",
+        AutoloadLabel = "Autoload",
+        NoAutoload = "None",
+        SetAutoloadTitle = "Set as autoload",
+        SetAutoloadDesc = "Load the selected config automatically next time the script runs",
+        SetAutoloadButton = "Set",
+        ClearAutoloadTitle = "Clear autoload",
+        ClearAutoloadDesc = "Stop automatically loading a named config on startup",
+        ClearAutoloadButton = "Clear",
+        AutoloadSet = "Autoload config set",
+        AutoloadCleared = "Autoload cleared",
+        SaveBeforeAutoload = "Save this config before setting it as autoload",
     },
     ["ไทย"] = {
         Navigation = "เมนู",
@@ -241,6 +252,17 @@ local LanguageDefinitions = {
         ConfigListRefreshed = "รีเฟรชรายการคอนฟิกแล้ว",
         ConfigDeleted = "ลบคอนฟิกแล้ว",
         DefaultsRestored = "คืนค่าเริ่มต้นแล้ว",
+        AutoloadLabel = "โหลดอัตโนมัติ",
+        NoAutoload = "ไม่มี",
+        SetAutoloadTitle = "ตั้งเป็นออโต้โหลด",
+        SetAutoloadDesc = "โหลดคอนฟิกที่เลือกให้อัตโนมัติเมื่อรันสคริปต์ครั้งถัดไป",
+        SetAutoloadButton = "ตั้งค่า",
+        ClearAutoloadTitle = "ยกเลิกออโต้โหลด",
+        ClearAutoloadDesc = "หยุดโหลดคอนฟิกที่ระบุอัตโนมัติเมื่อเริ่มสคริปต์",
+        ClearAutoloadButton = "ยกเลิก",
+        AutoloadSet = "ตั้งค่าออโต้โหลดแล้ว",
+        AutoloadCleared = "ยกเลิกออโต้โหลดแล้ว",
+        SaveBeforeAutoload = "กรุณาบันทึกคอนฟิกนี้ก่อนตั้งเป็นออโต้โหลด",
     },
     ["日本語"] = {
         Navigation = "ナビゲーション", SelectPlaceholder = "選択...", PressKey = "キーを押してください...", NoneText = "なし",
@@ -786,6 +808,8 @@ local function normalizeConfigOptions(raw)
     local fileName = sanitizeName(raw.FileName or raw.Name or "settings", "settings")
     local path = buildConfigPath(folder, fileName)
 
+    local autoloadFileName = sanitizeName(raw.AutoloadFileName or "__autoload", "__autoload")
+
     local config = {
         Enabled = raw.Enabled == true,
         Folder = folder,
@@ -796,9 +820,12 @@ local function normalizeConfigOptions(raw)
         SaveSelectedTab = raw.SaveSelectedTab ~= false,
         SaveMinimized = raw.SaveMinimized == true,
         AutoSaveDelay = math.max(tonumber(raw.AutoSaveDelay) or 0.35, 0.1),
+        AutoloadFileName = autoloadFileName,
+        AutoloadName = nil,
     }
 
     config.Path = path
+    config.AutoloadPath = folder .. "/" .. autoloadFileName .. ".json"
     return config
 end
 
@@ -826,6 +853,107 @@ local function ensureFolder(folder)
     end
 
     return false
+end
+
+local function readAutoloadConfigName(config)
+    if not config.Enabled or not config.AutoLoad or not fileSystemAvailable() then
+        return nil
+    end
+
+    local existsOk, exists = pcall(isfile, config.AutoloadPath)
+    if not existsOk or not exists then
+        return nil
+    end
+
+    local readOk, source = pcall(readfile, config.AutoloadPath)
+    if not readOk or type(source) ~= "string" or source == "" then
+        return nil
+    end
+
+    local decodeOk, decoded = pcall(function()
+        return HttpService:JSONDecode(source)
+    end)
+    if not decodeOk then
+        return nil
+    end
+
+    local rawName
+    if type(decoded) == "table" then
+        rawName = decoded.FileName or decoded.Name
+    elseif type(decoded) == "string" then
+        rawName = decoded
+    end
+
+    if type(rawName) ~= "string" or rawName == "" then
+        return nil
+    end
+
+    local _, safeName = buildConfigPath(config.Folder, rawName)
+    return safeName
+end
+
+local function writeAutoloadConfigName(config, fileName)
+    if not config.Enabled then
+        return false, "Config is disabled"
+    end
+    if not fileSystemAvailable() then
+        return false, "Executor does not support readfile/writefile/isfile"
+    end
+
+    ensureFolder(config.Folder)
+    local _, safeName = buildConfigPath(config.Folder, fileName)
+    local payload = {
+        Version = 1,
+        FileName = safeName,
+    }
+
+    local encodeOk, encoded = pcall(function()
+        return HttpService:JSONEncode(payload)
+    end)
+    if not encodeOk then
+        return false, "Unable to encode autoload config: " .. tostring(encoded)
+    end
+
+    local writeOk, writeError = pcall(writefile, config.AutoloadPath, encoded)
+    if not writeOk then
+        return false, "Unable to write autoload config: " .. tostring(writeError)
+    end
+
+    config.AutoloadName = safeName
+    return true, safeName
+end
+
+local function clearAutoloadConfigName(config)
+    if not config.Enabled then
+        return false, "Config is disabled"
+    end
+    if not fileSystemAvailable() then
+        return false, "Executor does not support file functions"
+    end
+
+    local existsOk, exists = pcall(isfile, config.AutoloadPath)
+    if existsOk and exists then
+        if type(delfile) == "function" then
+            local deleteOk, deleteError = pcall(delfile, config.AutoloadPath)
+            if not deleteOk then
+                return false, tostring(deleteError)
+            end
+        else
+            local encodeOk, encoded = pcall(function()
+                return HttpService:JSONEncode({ Version = 1, FileName = "" })
+            end)
+            if not encodeOk then
+                return false, tostring(encoded)
+            end
+            local writeOk, writeError = pcall(writefile, config.AutoloadPath, encoded)
+            if not writeOk then
+                return false, tostring(writeError)
+            end
+        end
+    end
+
+    config.AutoloadName = nil
+    return true, config.AutoloadPath
 end
 
 local function serializeValue(value)
@@ -2756,6 +2884,34 @@ function WindowMethods:RefreshConfigList()
     return self:GetConfigList()
 end
 
+function WindowMethods:GetAutoloadConfig()
+    if self.Config.AutoloadName and self.Config.AutoloadName ~= "" then
+        return self.Config.AutoloadName
+    end
+
+    local name = readAutoloadConfigName(self.Config)
+    self.Config.AutoloadName = name
+    return name
+end
+
+function WindowMethods:SetAutoloadConfig(configName)
+    if not self.Config.Enabled then
+        return false, "Config is disabled"
+    end
+
+    local configPath, safeName = buildConfigPath(self.Config.Folder, configName or self.Config.FileName)
+    local existsOk, exists = pcall(isfile, configPath)
+    if not existsOk or not exists then
+        return false, self:T("SaveBeforeAutoload", "Save this config before setting it as autoload")
+    end
+
+    return writeAutoloadConfigName(self.Config, safeName)
+end
+
+function WindowMethods:ClearAutoloadConfig()
+    return clearAutoloadConfigName(self.Config)
+end
+
 function WindowMethods:GetFlag(flag)
     return deepClone(self.Flags[flag])
 end
@@ -2778,10 +2934,6 @@ function WindowMethods:SaveConfig(configName)
     if not self.Config.Enabled then
         return false, "Config is disabled"
     end
-    if configName ~= nil then
-        self:SetConfigName(configName)
-    end
-
     if configName ~= nil then
         self:SetConfigName(configName)
     end
@@ -2914,12 +3066,17 @@ function WindowMethods:DeleteConfig(configName)
         return false, "Executor does not support delfile/isfile"
     end
 
+    local deletedName = self.Config.FileName
     local existsOk, exists = pcall(isfile, self.Config.Path)
     if existsOk and exists then
         local deleteOk, deleteError = pcall(delfile, self.Config.Path)
         if not deleteOk then
             return false, tostring(deleteError)
         end
+    end
+
+    if self:GetAutoloadConfig() == deletedName then
+        self:ClearAutoloadConfig()
     end
     return true
 end
@@ -3451,8 +3608,12 @@ function WindowMethods:AddConfigSection(tab, options)
         if not self.Config.Enabled then
             return self:T("ConfigEnableHint", "Enable Config in CreateWindow to save settings.")
         end
+
+        local autoloadName = self:GetAutoloadConfig()
         return self:T("FolderLabel", "Folder") .. ": " .. self.Config.Folder
             .. "\n" .. self:T("ActiveLabel", "Active") .. ": " .. self.Config.FileName
+            .. "\n" .. self:T("AutoloadLabel", "Autoload") .. ": "
+            .. tostring(autoloadName or self:T("NoAutoload", "None"))
     end
 
     local status = section:AddParagraph({
@@ -3482,7 +3643,11 @@ function WindowMethods:AddConfigSection(tab, options)
         local title = self:T(titleKey, fallbackTitle)
         local detail = tostring(message or "Done")
         if self.Config.Enabled then
-            detail = detail .. "\n" .. self:T("ActiveLabel", "Active") .. ": " .. self.Config.FileName
+            local autoloadName = self:GetAutoloadConfig()
+            detail = detail
+                .. "\n" .. self:T("ActiveLabel", "Active") .. ": " .. self.Config.FileName
+                .. "\n" .. self:T("AutoloadLabel", "Autoload") .. ": "
+                .. tostring(autoloadName or self:T("NoAutoload", "None"))
         end
         refreshStatus(success and title or (title .. " - Error"), detail)
         self:Notify({
@@ -3593,6 +3758,42 @@ function WindowMethods:AddConfigSection(tab, options)
     })
 
     section:AddButton({
+        Title = self:T("SetAutoloadTitle", "Set as autoload"),
+        Desc = self:T("SetAutoloadDesc", "Load the selected config automatically next time the script runs"),
+        TitleKey = "SetAutoloadTitle",
+        DescKey = "SetAutoloadDesc",
+        Icon = "pin",
+        ButtonText = self:T("SetAutoloadButton", "Set"),
+        ButtonTextKey = "SetAutoloadButton",
+        Callback = function()
+            local selected = configListDropdown and configListDropdown:Get() or currentTypedName()
+            local success, message = self:SetAutoloadConfig(selected)
+            if success then
+                self:SetConfigName(selected)
+                if configNameInput then
+                    configNameInput:Set(self.Config.FileName, true)
+                end
+                refreshConfigDropdown(self.Config.FileName)
+            end
+            showResult("AutoloadSet", "Autoload config set", success, message)
+        end,
+    })
+
+    section:AddButton({
+        Title = self:T("ClearAutoloadTitle", "Clear autoload"),
+        Desc = self:T("ClearAutoloadDesc", "Stop automatically loading a named config on startup"),
+        TitleKey = "ClearAutoloadTitle",
+        DescKey = "ClearAutoloadDesc",
+        Icon = "pin-off",
+        ButtonText = self:T("ClearAutoloadButton", "Clear"),
+        ButtonTextKey = "ClearAutoloadButton",
+        Callback = function()
+            local success, message = self:ClearAutoloadConfig()
+            showResult("AutoloadCleared", "Autoload cleared", success, message)
+        end,
+    })
+
+    section:AddButton({
         Title = self:T("RefreshConfigTitle", "Refresh list"),
         Desc = self:T("RefreshConfigDesc", "Reload the dropdown from files inside your config folder"),
         TitleKey = "RefreshConfigTitle",
@@ -3682,6 +3883,13 @@ function VoltzUI:CreateWindow(options)
     local config = normalizeConfigOptions(options.Config)
     local loadedConfig = nil
     if config.Enabled and config.AutoLoad then
+        local autoloadName = readAutoloadConfigName(config)
+        if autoloadName then
+            local path, safeName = buildConfigPath(config.Folder, autoloadName)
+            config.FileName = safeName
+            config.Path = path
+            config.AutoloadName = safeName
+        end
         loadedConfig = readConfigData(config)
     end
 
