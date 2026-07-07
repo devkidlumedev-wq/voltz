@@ -1,7 +1,7 @@
--- BUILD: VOLTZUI-1.2.2-FLAT-CARDS-20260707
+-- BUILD: VOLTZUI-1.2.3-RAISED-FLAT-20260707
 --[[
     VoltzUI - Clean Roblox UI Library
-    BUILD: VOLTZUI-1.2.2-FLAT-CARDS-20260707
+    BUILD: VOLTZUI-1.2.3-RAISED-FLAT-20260707
     Theme: clean dark + blue accent
     External icons: https://github.com/Footagesus/Icons
 
@@ -20,7 +20,7 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.2.2",
+    Version = "1.2.3",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -36,19 +36,23 @@ local ICON_PACK_URLS = {
 
 local Theme = {
     Accent = Color3.fromRGB(50, 180, 253),
-    AccentLight = Color3.fromRGB(123, 216, 255),
+    AccentLight = Color3.fromRGB(126, 218, 255),
     AccentDark = Color3.fromRGB(34, 145, 214),
 
+    -- Window layers
     Background = Color3.fromRGB(12, 16, 22),
-    Surface = Color3.fromRGB(17, 22, 30),
-    Surface2 = Color3.fromRGB(28, 35, 46),
-    Surface3 = Color3.fromRGB(38, 47, 60),
-    SurfaceHover = Color3.fromRGB(34, 43, 56),
-    Border = Color3.fromRGB(57, 70, 87),
+    Surface = Color3.fromRGB(18, 23, 31),
 
-    Text = Color3.fromRGB(248, 250, 252),
-    TextMuted = Color3.fromRGB(184, 196, 212),
-    TextDim = Color3.fromRGB(136, 151, 171),
+    -- Raised cards and control surfaces. These are deliberately brighter
+    -- than the page so cards no longer look pressed into the background.
+    Surface2 = Color3.fromRGB(34, 42, 54),
+    Surface3 = Color3.fromRGB(45, 55, 70),
+    SurfaceHover = Color3.fromRGB(40, 50, 64),
+    Border = Color3.fromRGB(67, 80, 99),
+
+    Text = Color3.fromRGB(255, 255, 255),
+    TextMuted = Color3.fromRGB(205, 214, 226),
+    TextDim = Color3.fromRGB(153, 168, 188),
 
     Success = Color3.fromRGB(74, 222, 128),
     Danger = Color3.fromRGB(248, 113, 113),
@@ -801,28 +805,28 @@ local function createElementBase(section, options, height)
         Name = options.Title,
         BackgroundColor3 = Theme.Surface2,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, height or (options.Desc and 66 or 56)),
+        Size = UDim2.new(1, 0, 0, height or (options.Desc and 68 or 58)),
         ClipsDescendants = true,
         Parent = section.Container,
     })
-    corner(frame, 13)
+    corner(frame, 15)
 
-    local leftOffset = 15
+    local leftOffset = 16
     local iconObject
     if options.Icon then
         iconObject = createIcon(frame, options.Icon, 18, Theme.TextMuted, 3)
-        iconObject.Frame.Position = UDim2.new(0, 15, 0.5, -9)
-        leftOffset = 44
+        iconObject.Frame.Position = UDim2.new(0, 16, 0.5, -9)
+        leftOffset = 46
     end
 
     local title = create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, leftOffset, 0, options.Desc and 11 or 0),
+        Position = UDim2.new(0, leftOffset, 0, options.Desc and 12 or 0),
         Size = UDim2.new(1, -(leftOffset + 112), options.Desc and 0 or 1, options.Desc and 21 or 0),
         Font = Enum.Font.GothamMedium,
         Text = options.Title,
         TextColor3 = Theme.Text,
-        TextSize = 13,
+        TextSize = 14,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
         Parent = frame,
@@ -833,13 +837,13 @@ local function createElementBase(section, options, height)
     if options.Desc then
         description = create("TextLabel", {
             BackgroundTransparency = 1,
-            Position = UDim2.new(0, leftOffset, 0, 34),
+            Position = UDim2.new(0, leftOffset, 0, 36),
             Size = UDim2.new(1, -(leftOffset + 112), 0, 18),
             Font = Enum.Font.Gotham,
             Text = options.Desc,
             TextColor3 = Theme.TextMuted,
             TextTransparency = 0,
-            TextSize = 11,
+            TextSize = 12,
             TextTruncate = Enum.TextTruncate.AtEnd,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Center,
@@ -1502,24 +1506,24 @@ function SectionMethods:AddParagraph(options)
     local frame = create("Frame", {
         BackgroundColor3 = Theme.Surface2,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 76),
+        Size = UDim2.new(1, 0, 0, 80),
         AutomaticSize = Enum.AutomaticSize.Y,
         Parent = self.Container,
     })
-    corner(frame, 13)
-    padding(frame, 15, 15, 13, 13)
+    corner(frame, 15)
+    padding(frame, 16, 16, 14, 14)
 
     local iconObject = createIcon(frame, options.Icon, 18, Theme.Accent, 3)
     iconObject.Frame.Position = UDim2.fromOffset(0, 1)
 
     local title = create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(29, 0),
-        Size = UDim2.new(1, -29, 0, 21),
+        Position = UDim2.fromOffset(30, 0),
+        Size = UDim2.new(1, -30, 0, 22),
         Font = Enum.Font.GothamMedium,
         Text = options.Title,
         TextColor3 = Theme.Text,
-        TextSize = 13,
+        TextSize = 14,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = frame,
         ZIndex = 3,
@@ -1527,14 +1531,14 @@ function SectionMethods:AddParagraph(options)
 
     local content = create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(29, 28),
-        Size = UDim2.new(1, -29, 0, 0),
+        Position = UDim2.fromOffset(30, 30),
+        Size = UDim2.new(1, -30, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         Font = Enum.Font.Gotham,
         Text = options.Content,
         TextColor3 = Theme.TextMuted,
         TextTransparency = 0,
-        TextSize = 11,
+        TextSize = 12,
         TextWrapped = true,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Top,
@@ -1631,7 +1635,7 @@ function TabMethods:AddSection(options)
         Font = Enum.Font.GothamSemibold,
         Text = options.Title,
         TextColor3 = Theme.Text,
-        TextSize = 15,
+        TextSize = 14,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = sectionFrame,
     })
@@ -1644,8 +1648,8 @@ function TabMethods:AddSection(options)
             Font = Enum.Font.Gotham,
             Text = options.Desc,
             TextColor3 = Theme.TextMuted,
-            TextTransparency = 0.15,
-            TextSize = 12,
+            TextTransparency = 0,
+            TextSize = 11,
             TextXAlignment = Enum.TextXAlignment.Left,
             Parent = sectionFrame,
         })
@@ -2498,22 +2502,19 @@ function VoltzUI:CreateWindow(options)
         Parent = screenGui,
     })
 
+    -- The old offset black shadow created a visible square/edge outside
+    -- the rounded window. Keep a transparent placeholder so existing
+    -- window methods stay compatible without drawing that edge.
     local shadow = create("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5),
-        BackgroundColor3 = Color3.fromRGB(0, 0, 0),
-        BackgroundTransparency = 0.5,
+        BackgroundTransparency = 1,
         BorderSizePixel = 0,
-        Position = UDim2.new(
-            initialPosition.X.Scale,
-            initialPosition.X.Offset,
-            initialPosition.Y.Scale,
-            initialPosition.Y.Offset + 8
-        ),
+        Position = initialPosition,
         Size = options.Size,
+        Visible = false,
         Parent = root,
         ZIndex = 1,
     })
-    corner(shadow, 20)
 
     local main = create("Frame", {
         AnchorPoint = Vector2.new(0.5, 0.5),
@@ -2526,7 +2527,6 @@ function VoltzUI:CreateWindow(options)
         ZIndex = 2,
     })
     corner(main, 18)
-    stroke(main, Theme.Border, 0.08, 1)
 
     local uiScale = create("UIScale", {
         Scale = 1,
