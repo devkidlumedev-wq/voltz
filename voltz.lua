@@ -1,7 +1,7 @@
--- BUILD: VOLTZUI-1.3.0-THEME-HEADER-20260707
+-- BUILD: VOLTZUI-1.4.0-PARAGRAPH-LOCALES-20260707
 --[[
     VoltzUI - Clean Roblox UI Library
-    BUILD: VOLTZUI-1.3.0-THEME-HEADER-20260707
+    BUILD: VOLTZUI-1.4.0-PARAGRAPH-LOCALES-20260707
     Theme: clean dark + selectable accent presets
     External icons: https://github.com/Footagesus/Icons
 
@@ -20,8 +20,8 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.3.0",
-    Build = "VOLTZUI-1.3.0-THEME-HEADER-20260707",
+    Version = "1.4.0",
+    Build = "VOLTZUI-1.4.0-PARAGRAPH-LOCALES-20260707",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -153,6 +153,239 @@ local ThemeOrder = {
 }
 
 local ActiveThemeName = "Ocean Blue"
+
+
+-- Built-in interface translations. Language names are intentionally shown in
+-- their native form so users can recover the setting even after switching.
+local LanguageDefinitions = {
+    ["English"] = {
+        Navigation = "NAVIGATION",
+        SelectPlaceholder = "Select...",
+        PressKey = "Press a key...",
+        NoneText = "None",
+        LanguageSectionTitle = "Language",
+        LanguageSectionDesc = "Choose the interface language",
+        LanguageControlTitle = "Interface language",
+        LanguageControlDesc = "Change built-in VoltzUI text instantly",
+        AppearanceTitle = "Appearance",
+        AppearanceDesc = "Choose a color preset for the interface",
+        ThemeColorTitle = "Theme color",
+        ThemeColorDesc = "Change the interface accent instantly",
+        ConfigurationTitle = "Configuration",
+        ConfigurationDesc = "Save, load and manage multiple VoltzUI configs",
+        ConfigFiles = "Config files",
+        ConfigReady = "Config ready",
+        ConfigDisabled = "Config disabled",
+        ConfigEnableHint = "Enable Config in CreateWindow to save settings.",
+        FolderLabel = "Folder",
+        ActiveLabel = "Active",
+        SavedConfigsTitle = "Saved configs",
+        SavedConfigsDesc = "Choose a config file from your saved list",
+        ConfigNameTitle = "Config name",
+        ConfigNameDesc = "Type the name you want to save or load as",
+        ConfigNamePlaceholder = "example_config",
+        SaveConfigTitle = "Save config",
+        SaveConfigDesc = "Save the current values into the typed config name",
+        SaveButton = "Save",
+        LoadConfigTitle = "Load config",
+        LoadConfigDesc = "Load the selected config from the dropdown",
+        LoadButton = "Load",
+        RefreshConfigTitle = "Refresh list",
+        RefreshConfigDesc = "Reload the dropdown from files inside your config folder",
+        RefreshButton = "Refresh",
+        DeleteConfigTitle = "Delete config",
+        DeleteConfigDesc = "Delete the selected config file from disk",
+        DeleteButton = "Delete",
+        ResetDefaultsTitle = "Reset defaults",
+        ResetDefaultsDesc = "Restore all saved controls to their default values",
+        ResetButton = "Reset",
+        ConfigSelected = "Config selected",
+        ConfigSaved = "Config saved",
+        ConfigLoaded = "Config loaded",
+        ConfigListRefreshed = "Config list refreshed",
+        ConfigDeleted = "Config deleted",
+        DefaultsRestored = "Defaults restored",
+    },
+    ["ไทย"] = {
+        Navigation = "เมนู",
+        SelectPlaceholder = "เลือก...",
+        PressKey = "กดปุ่มที่ต้องการ...",
+        NoneText = "ไม่มี",
+        LanguageSectionTitle = "ภาษา",
+        LanguageSectionDesc = "เลือกภาษาของอินเทอร์เฟซ",
+        LanguageControlTitle = "ภาษาอินเทอร์เฟซ",
+        LanguageControlDesc = "เปลี่ยนข้อความพื้นฐานของ VoltzUI ได้ทันที",
+        AppearanceTitle = "หน้าตาอินเทอร์เฟซ",
+        AppearanceDesc = "เลือกชุดสีสำหรับอินเทอร์เฟซ",
+        ThemeColorTitle = "ธีมสี",
+        ThemeColorDesc = "เปลี่ยนสีหลักของอินเทอร์เฟซได้ทันที",
+        ConfigurationTitle = "ไฟล์คอนฟิก",
+        ConfigurationDesc = "บันทึก โหลด และจัดการคอนฟิกหลายไฟล์",
+        ConfigFiles = "ไฟล์คอนฟิก",
+        ConfigReady = "ระบบคอนฟิกพร้อมใช้งาน",
+        ConfigDisabled = "ปิดระบบคอนฟิกอยู่",
+        ConfigEnableHint = "เปิด Config ใน CreateWindow เพื่อบันทึกการตั้งค่า",
+        FolderLabel = "โฟลเดอร์",
+        ActiveLabel = "กำลังใช้",
+        SavedConfigsTitle = "คอนฟิกที่บันทึกไว้",
+        SavedConfigsDesc = "เลือกไฟล์คอนฟิกจากรายการที่บันทึกไว้",
+        ConfigNameTitle = "ชื่อคอนฟิก",
+        ConfigNameDesc = "กรอกชื่อไฟล์ที่ต้องการบันทึกหรือโหลด",
+        ConfigNamePlaceholder = "ชื่อคอนฟิก",
+        SaveConfigTitle = "บันทึกคอนฟิก",
+        SaveConfigDesc = "บันทึกค่าปัจจุบันลงในชื่อคอนฟิกที่กรอก",
+        SaveButton = "บันทึก",
+        LoadConfigTitle = "โหลดคอนฟิก",
+        LoadConfigDesc = "โหลดคอนฟิกที่เลือกจากรายการ",
+        LoadButton = "โหลด",
+        RefreshConfigTitle = "รีเฟรชรายการ",
+        RefreshConfigDesc = "โหลดรายชื่อไฟล์คอนฟิกจากโฟลเดอร์ใหม่",
+        RefreshButton = "รีเฟรช",
+        DeleteConfigTitle = "ลบคอนฟิก",
+        DeleteConfigDesc = "ลบไฟล์คอนฟิกที่เลือกออกจากเครื่อง",
+        DeleteButton = "ลบ",
+        ResetDefaultsTitle = "คืนค่าเริ่มต้น",
+        ResetDefaultsDesc = "คืนค่าคอนโทรลทั้งหมดกลับเป็นค่าเริ่มต้น",
+        ResetButton = "รีเซ็ต",
+        ConfigSelected = "เลือกคอนฟิกแล้ว",
+        ConfigSaved = "บันทึกคอนฟิกแล้ว",
+        ConfigLoaded = "โหลดคอนฟิกแล้ว",
+        ConfigListRefreshed = "รีเฟรชรายการคอนฟิกแล้ว",
+        ConfigDeleted = "ลบคอนฟิกแล้ว",
+        DefaultsRestored = "คืนค่าเริ่มต้นแล้ว",
+    },
+    ["日本語"] = {
+        Navigation = "ナビゲーション", SelectPlaceholder = "選択...", PressKey = "キーを押してください...", NoneText = "なし",
+        LanguageSectionTitle = "言語", LanguageSectionDesc = "インターフェース言語を選択", LanguageControlTitle = "表示言語", LanguageControlDesc = "VoltzUI の標準テキストを変更します",
+        AppearanceTitle = "外観", AppearanceDesc = "インターフェースの配色を選択", ThemeColorTitle = "テーマカラー", ThemeColorDesc = "アクセントカラーをすぐに変更",
+        ConfigurationTitle = "設定ファイル", ConfigurationDesc = "複数の設定を保存・読込・管理", ConfigFiles = "設定ファイル", ConfigReady = "設定を使用できます", ConfigDisabled = "設定は無効です", ConfigEnableHint = "CreateWindow で Config を有効にしてください。",
+        FolderLabel = "フォルダー", ActiveLabel = "使用中", SavedConfigsTitle = "保存済み設定", SavedConfigsDesc = "保存済み設定を選択", ConfigNameTitle = "設定名", ConfigNameDesc = "保存または読み込む名前を入力", ConfigNamePlaceholder = "設定名",
+        SaveConfigTitle = "設定を保存", SaveConfigDesc = "現在の値を保存", SaveButton = "保存", LoadConfigTitle = "設定を読込", LoadConfigDesc = "選択した設定を読み込む", LoadButton = "読込",
+        RefreshConfigTitle = "一覧を更新", RefreshConfigDesc = "設定ファイル一覧を再読込", RefreshButton = "更新", DeleteConfigTitle = "設定を削除", DeleteConfigDesc = "選択した設定を削除", DeleteButton = "削除",
+        ResetDefaultsTitle = "初期値に戻す", ResetDefaultsDesc = "すべての項目を初期値に戻す", ResetButton = "リセット", ConfigSelected = "設定を選択しました", ConfigSaved = "設定を保存しました", ConfigLoaded = "設定を読み込みました", ConfigListRefreshed = "一覧を更新しました", ConfigDeleted = "設定を削除しました", DefaultsRestored = "初期値に戻しました",
+    },
+    ["简体中文"] = {
+        Navigation = "导航", SelectPlaceholder = "选择...", PressKey = "请按一个键...", NoneText = "无",
+        LanguageSectionTitle = "语言", LanguageSectionDesc = "选择界面语言", LanguageControlTitle = "界面语言", LanguageControlDesc = "即时更改 VoltzUI 内置文本",
+        AppearanceTitle = "外观", AppearanceDesc = "选择界面配色", ThemeColorTitle = "主题颜色", ThemeColorDesc = "即时更改界面强调色",
+        ConfigurationTitle = "配置", ConfigurationDesc = "保存、加载和管理多个配置", ConfigFiles = "配置文件", ConfigReady = "配置可用", ConfigDisabled = "配置已禁用", ConfigEnableHint = "请在 CreateWindow 中启用 Config。",
+        FolderLabel = "文件夹", ActiveLabel = "当前", SavedConfigsTitle = "已保存配置", SavedConfigsDesc = "从已保存列表中选择配置", ConfigNameTitle = "配置名称", ConfigNameDesc = "输入要保存或加载的名称", ConfigNamePlaceholder = "配置名称",
+        SaveConfigTitle = "保存配置", SaveConfigDesc = "将当前值保存到输入的配置名称", SaveButton = "保存", LoadConfigTitle = "加载配置", LoadConfigDesc = "加载下拉菜单中选择的配置", LoadButton = "加载",
+        RefreshConfigTitle = "刷新列表", RefreshConfigDesc = "重新读取配置文件列表", RefreshButton = "刷新", DeleteConfigTitle = "删除配置", DeleteConfigDesc = "删除所选配置文件", DeleteButton = "删除",
+        ResetDefaultsTitle = "恢复默认", ResetDefaultsDesc = "将所有控件恢复为默认值", ResetButton = "重置", ConfigSelected = "已选择配置", ConfigSaved = "配置已保存", ConfigLoaded = "配置已加载", ConfigListRefreshed = "配置列表已刷新", ConfigDeleted = "配置已删除", DefaultsRestored = "已恢复默认值",
+    },
+    ["한국어"] = {
+        Navigation = "탐색", SelectPlaceholder = "선택...", PressKey = "키를 누르세요...", NoneText = "없음",
+        LanguageSectionTitle = "언어", LanguageSectionDesc = "인터페이스 언어 선택", LanguageControlTitle = "인터페이스 언어", LanguageControlDesc = "VoltzUI 기본 문구를 즉시 변경합니다",
+        AppearanceTitle = "모양", AppearanceDesc = "인터페이스 색상 선택", ThemeColorTitle = "테마 색상", ThemeColorDesc = "강조 색상을 즉시 변경합니다",
+        ConfigurationTitle = "설정 파일", ConfigurationDesc = "여러 설정을 저장, 불러오기 및 관리", ConfigFiles = "설정 파일", ConfigReady = "설정 사용 가능", ConfigDisabled = "설정 비활성화됨", ConfigEnableHint = "CreateWindow에서 Config를 활성화하세요.",
+        FolderLabel = "폴더", ActiveLabel = "현재", SavedConfigsTitle = "저장된 설정", SavedConfigsDesc = "저장된 설정을 선택하세요", ConfigNameTitle = "설정 이름", ConfigNameDesc = "저장하거나 불러올 이름을 입력하세요", ConfigNamePlaceholder = "설정 이름",
+        SaveConfigTitle = "설정 저장", SaveConfigDesc = "현재 값을 입력한 이름으로 저장", SaveButton = "저장", LoadConfigTitle = "설정 불러오기", LoadConfigDesc = "선택한 설정을 불러오기", LoadButton = "불러오기",
+        RefreshConfigTitle = "목록 새로고침", RefreshConfigDesc = "설정 파일 목록 다시 읽기", RefreshButton = "새로고침", DeleteConfigTitle = "설정 삭제", DeleteConfigDesc = "선택한 설정 파일 삭제", DeleteButton = "삭제",
+        ResetDefaultsTitle = "기본값 복원", ResetDefaultsDesc = "모든 컨트롤을 기본값으로 복원", ResetButton = "초기화", ConfigSelected = "설정 선택됨", ConfigSaved = "설정 저장됨", ConfigLoaded = "설정 불러옴", ConfigListRefreshed = "목록 새로고침됨", ConfigDeleted = "설정 삭제됨", DefaultsRestored = "기본값 복원됨",
+    },
+    ["Español"] = {
+        Navigation = "NAVEGACIÓN", SelectPlaceholder = "Seleccionar...", PressKey = "Pulsa una tecla...", NoneText = "Ninguno",
+        LanguageSectionTitle = "Idioma", LanguageSectionDesc = "Elige el idioma de la interfaz", LanguageControlTitle = "Idioma de la interfaz", LanguageControlDesc = "Cambia el texto integrado de VoltzUI",
+        AppearanceTitle = "Apariencia", AppearanceDesc = "Elige una paleta de colores", ThemeColorTitle = "Color del tema", ThemeColorDesc = "Cambia el color de acento al instante",
+        ConfigurationTitle = "Configuración", ConfigurationDesc = "Guarda, carga y administra varias configuraciones", ConfigFiles = "Archivos de configuración", ConfigReady = "Configuración lista", ConfigDisabled = "Configuración desactivada", ConfigEnableHint = "Activa Config en CreateWindow.",
+        FolderLabel = "Carpeta", ActiveLabel = "Activa", SavedConfigsTitle = "Configuraciones guardadas", SavedConfigsDesc = "Elige una configuración guardada", ConfigNameTitle = "Nombre de configuración", ConfigNameDesc = "Escribe el nombre para guardar o cargar", ConfigNamePlaceholder = "nombre_config",
+        SaveConfigTitle = "Guardar configuración", SaveConfigDesc = "Guarda los valores actuales", SaveButton = "Guardar", LoadConfigTitle = "Cargar configuración", LoadConfigDesc = "Carga la configuración seleccionada", LoadButton = "Cargar",
+        RefreshConfigTitle = "Actualizar lista", RefreshConfigDesc = "Vuelve a leer los archivos de configuración", RefreshButton = "Actualizar", DeleteConfigTitle = "Eliminar configuración", DeleteConfigDesc = "Elimina el archivo seleccionado", DeleteButton = "Eliminar",
+        ResetDefaultsTitle = "Restablecer valores", ResetDefaultsDesc = "Restaura todos los controles", ResetButton = "Restablecer", ConfigSelected = "Configuración seleccionada", ConfigSaved = "Configuración guardada", ConfigLoaded = "Configuración cargada", ConfigListRefreshed = "Lista actualizada", ConfigDeleted = "Configuración eliminada", DefaultsRestored = "Valores restaurados",
+    },
+    ["Português"] = {
+        Navigation = "NAVEGAÇÃO", SelectPlaceholder = "Selecionar...", PressKey = "Pressione uma tecla...", NoneText = "Nenhum",
+        LanguageSectionTitle = "Idioma", LanguageSectionDesc = "Escolha o idioma da interface", LanguageControlTitle = "Idioma da interface", LanguageControlDesc = "Altere o texto integrado do VoltzUI",
+        AppearanceTitle = "Aparência", AppearanceDesc = "Escolha uma paleta de cores", ThemeColorTitle = "Cor do tema", ThemeColorDesc = "Mude a cor de destaque instantaneamente",
+        ConfigurationTitle = "Configuração", ConfigurationDesc = "Salve, carregue e gerencie várias configurações", ConfigFiles = "Arquivos de configuração", ConfigReady = "Configuração pronta", ConfigDisabled = "Configuração desativada", ConfigEnableHint = "Ative Config em CreateWindow.",
+        FolderLabel = "Pasta", ActiveLabel = "Ativa", SavedConfigsTitle = "Configurações salvas", SavedConfigsDesc = "Escolha uma configuração salva", ConfigNameTitle = "Nome da configuração", ConfigNameDesc = "Digite o nome para salvar ou carregar", ConfigNamePlaceholder = "nome_config",
+        SaveConfigTitle = "Salvar configuração", SaveConfigDesc = "Salve os valores atuais", SaveButton = "Salvar", LoadConfigTitle = "Carregar configuração", LoadConfigDesc = "Carregue a configuração selecionada", LoadButton = "Carregar",
+        RefreshConfigTitle = "Atualizar lista", RefreshConfigDesc = "Leia novamente os arquivos de configuração", RefreshButton = "Atualizar", DeleteConfigTitle = "Excluir configuração", DeleteConfigDesc = "Exclua o arquivo selecionado", DeleteButton = "Excluir",
+        ResetDefaultsTitle = "Restaurar padrões", ResetDefaultsDesc = "Restaure todos os controles", ResetButton = "Restaurar", ConfigSelected = "Configuração selecionada", ConfigSaved = "Configuração salva", ConfigLoaded = "Configuração carregada", ConfigListRefreshed = "Lista atualizada", ConfigDeleted = "Configuração excluída", DefaultsRestored = "Padrões restaurados",
+    },
+    ["Tiếng Việt"] = {
+        Navigation = "ĐIỀU HƯỚNG", SelectPlaceholder = "Chọn...", PressKey = "Nhấn một phím...", NoneText = "Không có",
+        LanguageSectionTitle = "Ngôn ngữ", LanguageSectionDesc = "Chọn ngôn ngữ giao diện", LanguageControlTitle = "Ngôn ngữ giao diện", LanguageControlDesc = "Đổi văn bản tích hợp của VoltzUI",
+        AppearanceTitle = "Giao diện", AppearanceDesc = "Chọn bảng màu giao diện", ThemeColorTitle = "Màu chủ đề", ThemeColorDesc = "Đổi màu nhấn ngay lập tức",
+        ConfigurationTitle = "Cấu hình", ConfigurationDesc = "Lưu, tải và quản lý nhiều cấu hình", ConfigFiles = "Tệp cấu hình", ConfigReady = "Cấu hình sẵn sàng", ConfigDisabled = "Cấu hình đã tắt", ConfigEnableHint = "Bật Config trong CreateWindow.",
+        FolderLabel = "Thư mục", ActiveLabel = "Đang dùng", SavedConfigsTitle = "Cấu hình đã lưu", SavedConfigsDesc = "Chọn cấu hình trong danh sách", ConfigNameTitle = "Tên cấu hình", ConfigNameDesc = "Nhập tên để lưu hoặc tải", ConfigNamePlaceholder = "ten_cau_hinh",
+        SaveConfigTitle = "Lưu cấu hình", SaveConfigDesc = "Lưu giá trị hiện tại", SaveButton = "Lưu", LoadConfigTitle = "Tải cấu hình", LoadConfigDesc = "Tải cấu hình đã chọn", LoadButton = "Tải",
+        RefreshConfigTitle = "Làm mới danh sách", RefreshConfigDesc = "Đọc lại danh sách tệp cấu hình", RefreshButton = "Làm mới", DeleteConfigTitle = "Xóa cấu hình", DeleteConfigDesc = "Xóa tệp cấu hình đã chọn", DeleteButton = "Xóa",
+        ResetDefaultsTitle = "Khôi phục mặc định", ResetDefaultsDesc = "Khôi phục tất cả điều khiển", ResetButton = "Đặt lại", ConfigSelected = "Đã chọn cấu hình", ConfigSaved = "Đã lưu cấu hình", ConfigLoaded = "Đã tải cấu hình", ConfigListRefreshed = "Đã làm mới danh sách", ConfigDeleted = "Đã xóa cấu hình", DefaultsRestored = "Đã khôi phục mặc định",
+    },
+}
+
+local LanguageOrder = {
+    "English",
+    "ไทย",
+    "日本語",
+    "简体中文",
+    "한국어",
+    "Español",
+    "Português",
+    "Tiếng Việt",
+}
+
+local LanguageAliases = {
+    ["en"] = "English", ["english"] = "English",
+    ["th"] = "ไทย", ["thai"] = "ไทย", ["ไทย"] = "ไทย",
+    ["ja"] = "日本語", ["jp"] = "日本語", ["japanese"] = "日本語", ["日本語"] = "日本語",
+    ["zh"] = "简体中文", ["zh-cn"] = "简体中文", ["chinese"] = "简体中文", ["简体中文"] = "简体中文",
+    ["ko"] = "한국어", ["korean"] = "한국어", ["한국어"] = "한국어",
+    ["es"] = "Español", ["spanish"] = "Español", ["español"] = "Español",
+    ["pt"] = "Português", ["portuguese"] = "Português", ["português"] = "Português",
+    ["vi"] = "Tiếng Việt", ["vietnamese"] = "Tiếng Việt", ["tiếng việt"] = "Tiếng Việt",
+}
+
+local ActiveLanguageName = "English"
+
+local function resolveLanguage(languageSpec)
+    local raw = tostring(languageSpec or "English")
+    if LanguageDefinitions[raw] then
+        return raw
+    end
+    return LanguageAliases[raw:lower()] or "English"
+end
+
+local function translate(languageName, key, fallback)
+    local selected = LanguageDefinitions[resolveLanguage(languageName)] or LanguageDefinitions.English
+    local english = LanguageDefinitions.English
+    return selected[key] or english[key] or fallback or tostring(key)
+end
+
+function VoltzUI:GetLanguageNames()
+    local result = {}
+    for _, name in ipairs(LanguageOrder) do
+        table.insert(result, name)
+    end
+    return result
+end
+
+function VoltzUI:AddLanguage(name, dictionary, aliases)
+    assert(type(name) == "string" and name ~= "", "Language name must be a non-empty string")
+    assert(type(dictionary) == "table", "Language dictionary must be a table")
+
+    LanguageDefinitions[name] = dictionary
+    local exists = false
+    for _, current in ipairs(LanguageOrder) do
+        if current == name then
+            exists = true
+            break
+        end
+    end
+    if not exists then
+        table.insert(LanguageOrder, name)
+    end
+
+    LanguageAliases[name:lower()] = name
+    if type(aliases) == "table" then
+        for _, alias in ipairs(aliases) do
+            LanguageAliases[tostring(alias):lower()] = name
+        end
+    end
+    return self
+end
 
 -- Thai-capable font system.
 -- NotoSansThai is preferred; safe fallbacks prevent the library from failing
@@ -1345,6 +1578,14 @@ local function createElementBase(section, options, height)
         tween(frame, 0.16, { BackgroundColor3 = Theme.Surface2 })
     end)
 
+    local window = section.Tab and section.Tab.Window
+    if window and options.TitleKey then
+        window:_BindLocaleText(title, "Text", options.TitleKey, options.Title)
+    end
+    if window and description and options.DescKey then
+        window:_BindLocaleText(description, "Text", options.DescKey, options.Desc)
+    end
+
     return {
         Frame = frame,
         Title = title,
@@ -1376,6 +1617,9 @@ function SectionMethods:AddButton(options)
     })
     corner(action, 10)
     bindHover(action, Theme.Surface3, Theme.AccentDark)
+    if options.ButtonTextKey then
+        self.Tab.Window:_BindLocaleText(action, "Text", options.ButtonTextKey, options.ButtonText or "Run")
+    end
 
     action.MouseButton1Click:Connect(function()
         tween(action, 0.08, { Size = UDim2.fromOffset(80, 32), Position = UDim2.new(1, -92, 0.5, -15) })
@@ -1669,7 +1913,7 @@ function SectionMethods:AddDropdown(options)
         Position = UDim2.new(0, 10, 0, 0),
         Size = UDim2.new(1, -38, 1, 0),
         FontFace = fontFace("Regular"),
-        Text = "Select...",
+        Text = self.Tab.Window:T("SelectPlaceholder", "Select..."),
         TextColor3 = Theme.TextMuted,
         TextTransparency = 0.08,
         TextSize = fontSize(12),
@@ -1715,17 +1959,19 @@ function SectionMethods:AddDropdown(options)
                 end
             end
             if #names == 0 then
-                return "Select..."
+                return self.Tab.Window:T("SelectPlaceholder", "Select...")
             end
             return table.concat(names, ", ")
         end
 
-        return selected ~= nil and tostring(selected) or "Select..."
+        return selected ~= nil and tostring(selected)
+            or self.Tab.Window:T("SelectPlaceholder", "Select...")
     end
 
     local function refreshVisuals()
         selectedLabel.Text = selectedText()
-        selectedLabel.TextColor3 = selectedLabel.Text == "Select..." and Theme.TextMuted or Theme.Text
+        local isEmpty = options.Multi and next(selected) == nil or (not options.Multi and selected == nil)
+        selectedLabel.TextColor3 = isEmpty and Theme.TextMuted or Theme.Text
 
         for valueName, buttonData in pairs(optionButtons) do
             local isSelected = options.Multi and selected[valueName] == true or selected == valueName
@@ -1874,6 +2120,7 @@ function SectionMethods:AddDropdown(options)
         setOpen(not open)
     end)
 
+    self.Tab.Window:_RegisterLocaleUpdater(refreshVisuals)
     rebuild()
     return self.Tab.Window:_RegisterControl(
         self,
@@ -1915,6 +2162,9 @@ function SectionMethods:AddInput(options)
     })
     corner(box, 10)
     padding(box, 10, 10, 0, 0)
+    if options.PlaceholderKey then
+        self.Tab.Window:_BindLocaleText(box, "PlaceholderText", options.PlaceholderKey, options.Placeholder)
+    end
     local boxStroke = stroke(box, Theme.Border, 0.16, 1)
 
     box.Focused:Connect(function()
@@ -1974,7 +2224,7 @@ function SectionMethods:AddKeybind(options)
         BackgroundColor3 = Theme.Surface3,
         Position = UDim2.new(1, -116, 0.5, -16),
         Size = UDim2.fromOffset(104, 34),
-        Text = currentKey and currentKey.Name or "None",
+        Text = currentKey and currentKey.Name or self.Tab.Window:T("NoneText", "None"),
         Parent = base.Frame,
         ZIndex = 4,
     })
@@ -1987,7 +2237,7 @@ function SectionMethods:AddKeybind(options)
             keyCode = Enum.KeyCode[keyCode]
         end
         currentKey = keyCode
-        keyButton.Text = currentKey and currentKey.Name or "None"
+        keyButton.Text = currentKey and currentKey.Name or self.Tab.Window:T("NoneText", "None")
         if not silent then
             safeCallback(options.ChangedCallback, currentKey)
         end
@@ -2003,8 +2253,16 @@ function SectionMethods:AddKeybind(options)
 
     keyButton.MouseButton1Click:Connect(function()
         listening = true
-        keyButton.Text = "Press a key..."
+        keyButton.Text = self.Tab.Window:T("PressKey", "Press a key...")
         tween(keyButton, 0.12, { BackgroundColor3 = Theme.AccentDark })
+    end)
+
+    self.Tab.Window:_RegisterLocaleUpdater(function()
+        if listening then
+            keyButton.Text = self.Tab.Window:T("PressKey", "Press a key...")
+        elseif not currentKey then
+            keyButton.Text = self.Tab.Window:T("NoneText", "None")
+        end
     end)
 
     UserInputService.InputBegan:Connect(function(input, gameProcessed)
@@ -2034,13 +2292,19 @@ function SectionMethods:AddParagraph(options)
         Title = "Information",
         Content = "",
         Icon = "info",
+        MinHeight = 86,
+        MaxHeight = nil,
     }, options)
+
+    local minHeight = math.max(tonumber(options.MinHeight) or 86, 72)
+    local maxHeight = tonumber(options.MaxHeight)
 
     local frame = create("Frame", {
         BackgroundColor3 = Theme.Surface2,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 86),
-        AutomaticSize = Enum.AutomaticSize.Y,
+        Size = UDim2.new(1, 0, 0, minHeight),
+        AutomaticSize = Enum.AutomaticSize.None,
+        ClipsDescendants = false,
         Parent = self.Container,
     })
     corner(frame, 15)
@@ -2065,7 +2329,7 @@ function SectionMethods:AddParagraph(options)
     local content = create("TextLabel", {
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(30, 33),
-        Size = UDim2.new(1, -30, 0, 0),
+        Size = UDim2.new(1, -30, 0, fontSize(12) + 4),
         AutomaticSize = Enum.AutomaticSize.Y,
         FontFace = fontFace("Regular"),
         Text = options.Content,
@@ -2078,6 +2342,44 @@ function SectionMethods:AddParagraph(options)
         Parent = frame,
         ZIndex = 3,
     })
+
+    local function updateHeight()
+        task.defer(function()
+            if not frame.Parent then
+                return
+            end
+
+            local measured = math.max(
+                math.ceil(content.TextBounds.Y),
+                math.ceil(content.AbsoluteSize.Y),
+                fontSize(12) + 4
+            )
+            local neededHeight = 33 + measured + 30
+            local targetHeight = math.max(minHeight, neededHeight)
+
+            if maxHeight and maxHeight > 0 then
+                targetHeight = math.min(targetHeight, maxHeight)
+                frame.ClipsDescendants = neededHeight > maxHeight
+            else
+                frame.ClipsDescendants = false
+            end
+
+            frame.Size = UDim2.new(1, 0, 0, targetHeight)
+        end)
+    end
+
+    content:GetPropertyChangedSignal("TextBounds"):Connect(updateHeight)
+    content:GetPropertyChangedSignal("Text"):Connect(updateHeight)
+    local lastMeasuredWidth = 0
+    frame:GetPropertyChangedSignal("AbsoluteSize"):Connect(function()
+        -- Only width changes affect wrapping. Ignoring height changes prevents
+        -- a resize feedback loop when the paragraph expands.
+        local width = math.floor(frame.AbsoluteSize.X + 0.5)
+        if width ~= lastMeasuredWidth then
+            lastMeasuredWidth = width
+            updateHeight()
+        end
+    end)
 
     frame.MouseEnter:Connect(function()
         tween(frame, 0.16, { BackgroundColor3 = Theme.SurfaceHover })
@@ -2093,14 +2395,39 @@ function SectionMethods:AddParagraph(options)
     end
     function controller:SetContent(text)
         content.Text = tostring(text)
+        updateHeight()
+    end
+    function controller:GetHeight()
+        return frame.Size.Y.Offset
+    end
+    function controller:RefreshSize()
+        updateHeight()
     end
     function controller:Destroy()
         frame:Destroy()
     end
+
+    local window = self.Tab and self.Tab.Window
+    if window and options.TitleKey then
+        window:_BindLocaleText(title, "Text", options.TitleKey, options.Title)
+    end
+    if window and options.ContentKey then
+        window:_BindLocaleText(content, "Text", options.ContentKey, options.Content)
+    end
+
+    updateHeight()
     return controller
 end
 
-function SectionMethods:AddDivider(text)
+function SectionMethods:AddDivider(value)
+    local options
+    if type(value) == "table" then
+        options = value
+    else
+        options = { Text = value }
+    end
+
+    local text = options.Text
     local frame = create("Frame", {
         BackgroundTransparency = 1,
         Size = UDim2.new(1, 0, 0, text and 26 or 14),
@@ -2120,7 +2447,7 @@ function SectionMethods:AddDivider(text)
         local label = create("TextLabel", {
             AnchorPoint = Vector2.new(0.5, 0.5),
             AutomaticSize = Enum.AutomaticSize.X,
-            BackgroundColor3 = Theme.Surface,
+            BackgroundColor3 = Theme.Background,
             BorderSizePixel = 0,
             Position = UDim2.fromScale(0.5, 0.5),
             Size = UDim2.fromOffset(0, 18),
@@ -2132,6 +2459,12 @@ function SectionMethods:AddDivider(text)
             ZIndex = 2,
         })
         line.ZIndex = 1
+
+        if options.LocaleKey then
+            self.Tab.Window:_RegisterLocaleUpdater(function()
+                label.Text = "  " .. self.Tab.Window:T(options.LocaleKey, text) .. "  "
+            end)
+        end
         return label
     end
 
@@ -2173,8 +2506,9 @@ function TabMethods:AddSection(options)
         Parent = sectionFrame,
     })
 
+    local description
     if options.Desc then
-        create("TextLabel", {
+        description = create("TextLabel", {
             BackgroundTransparency = 1,
             Position = UDim2.fromOffset(2, 26),
             Size = UDim2.new(1, -4, 0, 21),
@@ -2211,9 +2545,17 @@ function TabMethods:AddSection(options)
         Frame = sectionFrame,
         Container = container,
         TitleLabel = title,
+        DescriptionLabel = description,
         Title = options.Title,
         Tab = self,
     }, SectionMethods)
+
+    if options.TitleKey then
+        self.Window:_BindLocaleText(title, "Text", options.TitleKey, options.Title)
+    end
+    if description and options.DescKey then
+        self.Window:_BindLocaleText(description, "Text", options.DescKey, options.Desc)
+    end
 
     return section
 end
@@ -2251,6 +2593,51 @@ end
 
 local WindowMethods = {}
 WindowMethods.__index = WindowMethods
+
+function WindowMethods:T(key, fallback)
+    return translate(self.LanguageName or ActiveLanguageName, key, fallback)
+end
+
+function WindowMethods:_RegisterLocaleUpdater(callback)
+    if type(callback) ~= "function" then
+        return nil
+    end
+    self._LocaleUpdaters = self._LocaleUpdaters or {}
+    table.insert(self._LocaleUpdaters, callback)
+    local ok, message = pcall(callback)
+    if not ok then
+        warn("[VoltzUI Locale] " .. tostring(message))
+    end
+    return callback
+end
+
+function WindowMethods:_BindLocaleText(instance, property, key, fallback)
+    return self:_RegisterLocaleUpdater(function()
+        if instance and instance.Parent then
+            instance[property] = self:T(key, fallback)
+        end
+    end)
+end
+
+function WindowMethods:SetLanguage(languageSpec)
+    local selected = resolveLanguage(languageSpec)
+    self.LanguageName = selected
+    ActiveLanguageName = selected
+    VoltzUI.DefaultLanguage = selected
+
+    for _, updater in ipairs(self._LocaleUpdaters or {}) do
+        local ok, message = pcall(updater)
+        if not ok then
+            warn("[VoltzUI Locale] " .. tostring(message))
+        end
+    end
+    return true, selected
+end
+
+function WindowMethods:GetLanguage()
+    return self.LanguageName or ActiveLanguageName
+end
+
 
 function WindowMethods:_BuildFlag(section, options)
     local requested = options.Flag
@@ -2678,6 +3065,26 @@ function WindowMethods:AddTab(options)
         end
     end)
 
+    if options.TitleKey then
+        self:_RegisterLocaleUpdater(function()
+            local translated = self:T(options.TitleKey, options.Title)
+            tab.Title = translated
+            label.Text = translated
+            if self.SelectedTab == tab then
+                self.ActiveTitle.Text = translated
+            end
+        end)
+    end
+    if options.DescKey then
+        self:_RegisterLocaleUpdater(function()
+            tab.Description = self:T(options.DescKey, options.Desc)
+            if self.SelectedTab == tab then
+                self.ActiveDescription.Text = tab.Description or ""
+                self.ActiveDescription.Visible = tab.Description ~= nil and tab.Description ~= ""
+            end
+        end)
+    end
+
     if self.PendingSelectedTab and self.PendingSelectedTab == tab.Title then
         self:SelectTab(tab)
     elseif not self.SelectedTab then
@@ -2704,18 +3111,81 @@ function WindowMethods:Minimize(value)
         value = not self.Minimized
     end
 
-    self.Minimized = value == true
-    self.Body.Visible = not self.Minimized
+    local shouldMinimize = value == true
+    if self.Minimized == shouldMinimize and not self._MinimizeTween then
+        return
+    end
+
+    self.Minimized = shouldMinimize
+
+    if self._MinimizeTween then
+        pcall(function()
+            self._MinimizeTween:Cancel()
+        end)
+        self._MinimizeTween = nil
+    end
+
+    if not shouldMinimize then
+        self.Body.Visible = true
+    end
+
     local headerHeight = self.HeaderHeight or 60
-    local targetSize = self.Minimized and UDim2.fromOffset(self.Size.X.Offset, headerHeight) or self.Size
-    tween(self.Main, 0.22, {
+    local targetSize = shouldMinimize
+        and UDim2.fromOffset(self.Size.X.Offset, headerHeight)
+        or self.Size
+
+    local mainTween = tween(self.Main, 0.24, {
         Size = targetSize,
     }, Enum.EasingStyle.Quint)
+    self._MinimizeTween = mainTween
+
     if self.Shadow then
-        tween(self.Shadow, 0.22, { Size = targetSize }, Enum.EasingStyle.Quint)
+        tween(self.Shadow, 0.24, {
+            Size = targetSize,
+        }, Enum.EasingStyle.Quint)
     end
+
+    mainTween.Completed:Connect(function()
+        if self._MinimizeTween ~= mainTween then
+            return
+        end
+
+        self._MinimizeTween = nil
+        if self.Minimized then
+            self.Body.Visible = false
+        end
+    end)
+
     if not self._LoadingConfig then
         self:_QueueAutoSave()
+    end
+end
+
+function WindowMethods:Close()
+    if self._Closing then
+        return
+    end
+
+    self._Closing = true
+
+    if self.InputConnection then
+        self.InputConnection:Disconnect()
+        self.InputConnection = nil
+    end
+
+    if self._MinimizeTween then
+        pcall(function()
+            self._MinimizeTween:Cancel()
+        end)
+        self._MinimizeTween = nil
+    end
+
+    if VoltzUI.ActiveWindow == self then
+        VoltzUI.ActiveWindow = nil
+    end
+
+    if self.ScreenGui and self.ScreenGui.Parent then
+        self.ScreenGui:Destroy()
     end
 end
 
@@ -2742,8 +3212,10 @@ end
 
 function WindowMethods:_AddThemeControls(section, options)
     options = merge({
-        Title = "Theme color",
-        Desc = "Change the interface accent instantly",
+        Title = self:T("ThemeColorTitle", "Theme color"),
+        Desc = self:T("ThemeColorDesc", "Change the interface accent instantly"),
+        TitleKey = "ThemeColorTitle",
+        DescKey = "ThemeColorDesc",
         Icon = "palette",
         Flag = "__VoltzTheme",
         Save = true,
@@ -2752,6 +3224,8 @@ function WindowMethods:_AddThemeControls(section, options)
     return section:AddDropdown({
         Title = options.Title,
         Desc = options.Desc,
+        TitleKey = options.TitleKey,
+        DescKey = options.DescKey,
         Icon = options.Icon,
         Values = VoltzUI:GetThemeNames(),
         Default = self.ThemeName or ActiveThemeName,
@@ -2766,22 +3240,88 @@ function WindowMethods:_AddThemeControls(section, options)
     })
 end
 
-function WindowMethods:AddThemeSection(tab, options)
+function WindowMethods:_AddLanguageControls(section, options)
     options = merge({
-        Title = "Appearance",
-        Desc = "Choose a color preset for the interface",
+        Title = self:T("LanguageControlTitle", "Interface language"),
+        Desc = self:T("LanguageControlDesc", "Change built-in VoltzUI text instantly"),
+        TitleKey = "LanguageControlTitle",
+        DescKey = "LanguageControlDesc",
+        Icon = "languages",
+        Flag = "__VoltzLanguage",
+        Save = true,
+    }, options)
+
+    return section:AddDropdown({
+        Title = options.Title,
+        Desc = options.Desc,
+        TitleKey = options.TitleKey,
+        DescKey = options.DescKey,
+        Icon = options.Icon,
+        Values = VoltzUI:GetLanguageNames(),
+        Default = self.LanguageName or ActiveLanguageName,
+        Flag = options.Flag,
+        Save = options.Save ~= false,
+        Callback = function(value)
+            local success, selectedName = self:SetLanguage(value)
+            if success then
+                safeCallback(options.Callback, selectedName)
+            end
+        end,
+    })
+end
+
+function WindowMethods:AddThemeSection(tab, options)
+    options = options or {}
+    local customTitle = options.Title ~= nil
+    local customDesc = options.Desc ~= nil
+    options = merge({
+        Title = self:T("AppearanceTitle", "Appearance"),
+        Desc = self:T("AppearanceDesc", "Choose a color preset for the interface"),
     }, options)
 
     local section = tab:AddSection({
         Title = options.Title,
         Desc = options.Desc,
+        TitleKey = customTitle and options.TitleKey or "AppearanceTitle",
+        DescKey = customDesc and options.DescKey or "AppearanceDesc",
     })
 
     self:_AddThemeControls(section, {
-        Title = options.ControlTitle or "Theme color",
-        Desc = options.ControlDesc or "Change the interface accent instantly",
+        Title = options.ControlTitle or self:T("ThemeColorTitle", "Theme color"),
+        Desc = options.ControlDesc or self:T("ThemeColorDesc", "Change the interface accent instantly"),
+        TitleKey = options.ControlTitle and options.ControlTitleKey or "ThemeColorTitle",
+        DescKey = options.ControlDesc and options.ControlDescKey or "ThemeColorDesc",
         Icon = options.Icon or "palette",
         Flag = options.Flag or "__VoltzTheme",
+        Save = options.Save ~= false,
+        Callback = options.Callback,
+    })
+    return section
+end
+
+function WindowMethods:AddLanguageSection(tab, options)
+    options = options or {}
+    local customTitle = options.Title ~= nil
+    local customDesc = options.Desc ~= nil
+    options = merge({
+        Title = self:T("LanguageSectionTitle", "Language"),
+        Desc = self:T("LanguageSectionDesc", "Choose the interface language"),
+    }, options)
+
+    local section = tab:AddSection({
+        Title = options.Title,
+        Desc = options.Desc,
+        TitleKey = customTitle and options.TitleKey or "LanguageSectionTitle",
+        DescKey = customDesc and options.DescKey or "LanguageSectionDesc",
+    })
+
+    self:_AddLanguageControls(section, {
+        Title = options.ControlTitle or self:T("LanguageControlTitle", "Interface language"),
+        Desc = options.ControlDesc or self:T("LanguageControlDesc", "Change built-in VoltzUI text instantly"),
+        TitleKey = options.ControlTitle and options.ControlTitleKey or "LanguageControlTitle",
+        DescKey = options.ControlDesc and options.ControlDescKey or "LanguageControlDesc",
+        Icon = options.Icon or "languages",
+        Flag = options.Flag or "__VoltzLanguage",
         Save = options.Save ~= false,
         Callback = options.Callback,
     })
@@ -2871,35 +3411,76 @@ function WindowMethods:Notify(options)
 end
 
 function WindowMethods:AddConfigSection(tab, options)
+    options = options or {}
+    local customTitle = options.Title ~= nil
+    local customDesc = options.Desc ~= nil
     options = merge({
-        Title = "Configuration",
-        Desc = "Save, load and manage multiple VoltzUI configs",
+        Title = self:T("ConfigurationTitle", "Configuration"),
+        Desc = self:T("ConfigurationDesc", "Save, load and manage multiple VoltzUI configs"),
+        IncludeLanguage = true,
         IncludeTheme = true,
     }, options)
 
     local section = tab:AddSection({
         Title = options.Title,
         Desc = options.Desc,
+        TitleKey = customTitle and options.TitleKey or "ConfigurationTitle",
+        DescKey = customDesc and options.DescKey or "ConfigurationDesc",
     })
+
+    if options.IncludeLanguage ~= false then
+        self:_AddLanguageControls(section, {
+            Title = options.LanguageTitle or self:T("LanguageControlTitle", "Interface language"),
+            Desc = options.LanguageDesc or self:T("LanguageControlDesc", "Change built-in VoltzUI text instantly"),
+            TitleKey = options.LanguageTitle and options.LanguageTitleKey or "LanguageControlTitle",
+            DescKey = options.LanguageDesc and options.LanguageDescKey or "LanguageControlDesc",
+            Icon = options.LanguageIcon or "languages",
+            Flag = "__VoltzLanguage",
+            Save = true,
+        })
+    end
 
     if options.IncludeTheme ~= false then
         self:_AddThemeControls(section, {
-            Title = options.ThemeTitle or "Theme color",
-            Desc = options.ThemeDesc or "Choose from 10 built-in color presets",
+            Title = options.ThemeTitle or self:T("ThemeColorTitle", "Theme color"),
+            Desc = options.ThemeDesc or self:T("ThemeColorDesc", "Choose from built-in color presets"),
+            TitleKey = options.ThemeTitle and options.ThemeTitleKey or "ThemeColorTitle",
+            DescKey = options.ThemeDesc and options.ThemeDescKey or "ThemeColorDesc",
             Icon = "palette",
             Flag = "__VoltzTheme",
             Save = true,
         })
-        section:AddDivider("Config files")
+    end
+
+    if options.IncludeLanguage ~= false or options.IncludeTheme ~= false then
+        section:AddDivider({
+            Text = self:T("ConfigFiles", "Config files"),
+            LocaleKey = "ConfigFiles",
+        })
+    end
+
+    local function configStatusText()
+        if not self.Config.Enabled then
+            return self:T("ConfigEnableHint", "Enable Config in CreateWindow to save settings.")
+        end
+        return self:T("FolderLabel", "Folder") .. ": " .. self.Config.Folder
+            .. "\n" .. self:T("ActiveLabel", "Active") .. ": " .. self.Config.FileName
     end
 
     local status = section:AddParagraph({
-        Title = self.Config.Enabled and "Config ready" or "Config disabled",
-        Content = self.Config.Enabled
-            and ("Folder: " .. self.Config.Folder .. "\nActive: " .. self.Config.FileName)
-            or "Enable Config in CreateWindow to save settings.",
+        Title = self.Config.Enabled
+            and self:T("ConfigReady", "Config ready")
+            or self:T("ConfigDisabled", "Config disabled"),
+        Content = configStatusText(),
         Icon = self.Config.Enabled and "database" or "circle-off",
     })
+
+    self:_RegisterLocaleUpdater(function()
+        status:SetTitle(self.Config.Enabled
+            and self:T("ConfigReady", "Config ready")
+            or self:T("ConfigDisabled", "Config disabled"))
+        status:SetContent(configStatusText())
+    end)
 
     local configNameInput
     local configListDropdown
@@ -2909,13 +3490,13 @@ function WindowMethods:AddConfigSection(tab, options)
         status:SetContent(contentText)
     end
 
-    local function showResult(title, success, message)
-        refreshStatus(
-            success and title or (title .. " failed"),
-            self.Config.Enabled
-                and ((tostring(message or "Done")) .. "\nActive: " .. self.Config.FileName)
-                or tostring(message or "Done")
-        )
+    local function showResult(titleKey, fallbackTitle, success, message)
+        local title = self:T(titleKey, fallbackTitle)
+        local detail = tostring(message or "Done")
+        if self.Config.Enabled then
+            detail = detail .. "\n" .. self:T("ActiveLabel", "Active") .. ": " .. self.Config.FileName
+        end
+        refreshStatus(success and title or (title .. " - Error"), detail)
         self:Notify({
             Title = title,
             Content = tostring(message or "Done"),
@@ -2926,8 +3507,7 @@ function WindowMethods:AddConfigSection(tab, options)
 
     local function currentTypedName()
         local raw = configNameInput and configNameInput:Get() or self.Config.FileName
-        local safe = sanitizeName(raw, self.Config.FileName or "settings")
-        return safe
+        return sanitizeName(raw, self.Config.FileName or "settings")
     end
 
     local function refreshConfigDropdown(selectName)
@@ -2946,8 +3526,10 @@ function WindowMethods:AddConfigSection(tab, options)
     end
 
     configListDropdown = section:AddDropdown({
-        Title = "Saved configs",
-        Desc = "Choose a config file from your saved list",
+        Title = self:T("SavedConfigsTitle", "Saved configs"),
+        Desc = self:T("SavedConfigsDesc", "Choose a config file from your saved list"),
+        TitleKey = "SavedConfigsTitle",
+        DescKey = "SavedConfigsDesc",
         Icon = "folder-open",
         Values = self:RefreshConfigList(),
         Default = self.Config.FileName,
@@ -2958,30 +3540,36 @@ function WindowMethods:AddConfigSection(tab, options)
                 if configNameInput then
                     configNameInput:Set(value, true)
                 end
-                refreshStatus("Config selected", "Folder: " .. self.Config.Folder .. "\nActive: " .. self.Config.FileName)
+                refreshStatus(self:T("ConfigSelected", "Config selected"), configStatusText())
             end
         end,
     })
 
     configNameInput = section:AddInput({
-        Title = "Config name",
-        Desc = "Type the name you want to save or load as",
+        Title = self:T("ConfigNameTitle", "Config name"),
+        Desc = self:T("ConfigNameDesc", "Type the name you want to save or load as"),
+        TitleKey = "ConfigNameTitle",
+        DescKey = "ConfigNameDesc",
         Icon = "text-cursor-input",
         Default = self.Config.FileName,
-        Placeholder = "example_config",
+        Placeholder = self:T("ConfigNamePlaceholder", "example_config"),
+        PlaceholderKey = "ConfigNamePlaceholder",
         Save = false,
-        Callback = function(text)
-            local name = sanitizeName(text, self.Config.FileName or "settings")
+        Callback = function(inputText)
+            local name = sanitizeName(inputText, self.Config.FileName or "settings")
             self:SetConfigName(name)
-            refreshStatus("Config selected", "Folder: " .. self.Config.Folder .. "\nActive: " .. self.Config.FileName)
+            refreshStatus(self:T("ConfigSelected", "Config selected"), configStatusText())
         end,
     })
 
     section:AddButton({
-        Title = "Save config",
-        Desc = "Save the current values into the typed config name",
+        Title = self:T("SaveConfigTitle", "Save config"),
+        Desc = self:T("SaveConfigDesc", "Save the current values into the typed config name"),
+        TitleKey = "SaveConfigTitle",
+        DescKey = "SaveConfigDesc",
         Icon = "save",
-        ButtonText = "Save",
+        ButtonText = self:T("SaveButton", "Save"),
+        ButtonTextKey = "SaveButton",
         Callback = function()
             local name = currentTypedName()
             local success, message = self:SaveConfig(name)
@@ -2991,15 +3579,18 @@ function WindowMethods:AddConfigSection(tab, options)
                 end
                 refreshConfigDropdown(self.Config.FileName)
             end
-            showResult("Config saved", success, message)
+            showResult("ConfigSaved", "Config saved", success, message)
         end,
     })
 
     section:AddButton({
-        Title = "Load config",
-        Desc = "Load the selected config from the dropdown",
+        Title = self:T("LoadConfigTitle", "Load config"),
+        Desc = self:T("LoadConfigDesc", "Load the selected config from the dropdown"),
+        TitleKey = "LoadConfigTitle",
+        DescKey = "LoadConfigDesc",
         Icon = "download",
-        ButtonText = "Load",
+        ButtonText = self:T("LoadButton", "Load"),
+        ButtonTextKey = "LoadButton",
         Callback = function()
             local selected = configListDropdown and configListDropdown:Get() or currentTypedName()
             local success, message = self:LoadConfig(selected)
@@ -3009,44 +3600,53 @@ function WindowMethods:AddConfigSection(tab, options)
                 end
                 refreshConfigDropdown(self.Config.FileName)
             end
-            showResult("Config loaded", success, message)
+            showResult("ConfigLoaded", "Config loaded", success, message)
         end,
     })
 
     section:AddButton({
-        Title = "Refresh list",
-        Desc = "Reload the dropdown from files inside your config folder",
+        Title = self:T("RefreshConfigTitle", "Refresh list"),
+        Desc = self:T("RefreshConfigDesc", "Reload the dropdown from files inside your config folder"),
+        TitleKey = "RefreshConfigTitle",
+        DescKey = "RefreshConfigDesc",
         Icon = "refresh-cw",
-        ButtonText = "Refresh",
+        ButtonText = self:T("RefreshButton", "Refresh"),
+        ButtonTextKey = "RefreshButton",
         Callback = function()
             refreshConfigDropdown(self.Config.FileName)
-            showResult("Config list refreshed", true, self.Config.Folder)
+            showResult("ConfigListRefreshed", "Config list refreshed", true, self.Config.Folder)
         end,
     })
 
     section:AddButton({
-        Title = "Delete config",
-        Desc = "Delete the selected config file from disk",
+        Title = self:T("DeleteConfigTitle", "Delete config"),
+        Desc = self:T("DeleteConfigDesc", "Delete the selected config file from disk"),
+        TitleKey = "DeleteConfigTitle",
+        DescKey = "DeleteConfigDesc",
         Icon = "trash-2",
-        ButtonText = "Delete",
+        ButtonText = self:T("DeleteButton", "Delete"),
+        ButtonTextKey = "DeleteButton",
         Callback = function()
             local selected = configListDropdown and configListDropdown:Get() or currentTypedName()
             local success, message = self:DeleteConfig(selected)
             if success then
                 refreshConfigDropdown(currentTypedName())
             end
-            showResult("Config deleted", success, message)
+            showResult("ConfigDeleted", "Config deleted", success, message)
         end,
     })
 
     section:AddButton({
-        Title = "Reset defaults",
-        Desc = "Restore all saved controls to their default values",
+        Title = self:T("ResetDefaultsTitle", "Reset defaults"),
+        Desc = self:T("ResetDefaultsDesc", "Restore all saved controls to their default values"),
+        TitleKey = "ResetDefaultsTitle",
+        DescKey = "ResetDefaultsDesc",
         Icon = "rotate-ccw",
-        ButtonText = "Reset",
+        ButtonText = self:T("ResetButton", "Reset"),
+        ButtonTextKey = "ResetButton",
         Callback = function()
             local success, message = self:ResetConfig(false)
-            showResult("Defaults restored", success, message)
+            showResult("DefaultsRestored", "Defaults restored", success, message)
         end,
     })
 
@@ -3055,13 +3655,7 @@ function WindowMethods:AddConfigSection(tab, options)
 end
 
 function WindowMethods:Destroy()
-    if self.InputConnection then
-        self.InputConnection:Disconnect()
-    end
-    if VoltzUI.ActiveWindow == self then
-        VoltzUI.ActiveWindow = nil
-    end
-    self.ScreenGui:Destroy()
+    self:Close()
 end
 
 function VoltzUI:CreateWindow(options)
@@ -3074,6 +3668,7 @@ function VoltzUI:CreateWindow(options)
         MobileButton = true,
         Acrylic = false,
         Font = "NotoSansThai",
+        Language = VoltzUI.DefaultLanguage or "English",
         Theme = VoltzUI.DefaultTheme or "Ocean Blue",
         HeaderHeight = 60,
         Config = {
@@ -3085,6 +3680,10 @@ function VoltzUI:CreateWindow(options)
     if options.FontScale ~= nil then
         self:SetFontScale(options.FontScale)
     end
+
+    local initialLanguageName = resolveLanguage(options.Language)
+    ActiveLanguageName = initialLanguageName
+    self.DefaultLanguage = initialLanguageName
 
     local initialThemeName, initialThemePalette = resolveTheme(options.Theme)
     applyThemePalette(initialThemePalette)
@@ -3336,12 +3935,12 @@ function VoltzUI:CreateWindow(options)
         ZIndex = 5,
     })
 
-    create("TextLabel", {
+    local navigationLabel = create("TextLabel", {
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(14, 12),
         Size = UDim2.new(1, -28, 0, 18),
         FontFace = fontFace("Medium"),
-        Text = "NAVIGATION",
+        Text = translate(initialLanguageName, "Navigation", "NAVIGATION"),
         TextColor3 = Theme.TextDim,
         TextSize = fontSize(10),
         TextXAlignment = Enum.TextXAlignment.Left,
@@ -3457,6 +4056,8 @@ function VoltzUI:CreateWindow(options)
         Topbar = topbar,
         HeaderHeight = headerHeight,
         ThemeName = initialThemeName,
+        LanguageName = initialLanguageName,
+        NavigationLabel = navigationLabel,
         TabList = tabList,
         PageContainer = pageContainer,
         ActiveTitle = activeTitle,
@@ -3477,14 +4078,19 @@ function VoltzUI:CreateWindow(options)
         _LoadingConfig = false,
         _Initializing = true,
         _SaveToken = 0,
+        _LocaleUpdaters = {},
+        _MinimizeTween = nil,
+        _Closing = false,
     }, WindowMethods)
+
+    window:_BindLocaleText(navigationLabel, "Text", "Navigation", "NAVIGATION")
 
     minimizeButton.MouseButton1Click:Connect(function()
         window:Minimize()
     end)
 
     closeButton.MouseButton1Click:Connect(function()
-        window:SetVisible(false)
+        window:Close()
     end)
 
     dragify(topbar, main, function(position)
@@ -3547,6 +4153,7 @@ WindowMethods.CreateTab = WindowMethods.AddTab
 WindowMethods.Notification = WindowMethods.Notify
 WindowMethods.ConfigSection = WindowMethods.AddConfigSection
 WindowMethods.ThemeSection = WindowMethods.AddThemeSection
+WindowMethods.LanguageSection = WindowMethods.AddLanguageSection
 WindowMethods.SetVisibility = WindowMethods.SetVisible
 TabMethods.CreateSection = TabMethods.AddSection
 SectionMethods.Button = SectionMethods.AddButton
@@ -3560,6 +4167,7 @@ SectionMethods.Divider = SectionMethods.AddDivider
 
 VoltzUI.Theme = Theme
 VoltzUI.ThemePresets = ThemeDefinitions
+VoltzUI.LanguagePresets = LanguageDefinitions
 VoltzUI.LoadIcons = loadExternalIcons
 VoltzUI.SetFontFamily = VoltzUI.SetFont
 VoltzUI.SetTypographyScale = VoltzUI.SetFontScale
