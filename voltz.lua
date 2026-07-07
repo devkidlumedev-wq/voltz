@@ -1,7 +1,7 @@
--- BUILD: VOLTZUI-1.2.9-DROPDOWN-ICON-FIX-20260707
+-- BUILD: VOLTZUI-1.2.10-DROPDOWN-HEADER-LOCK-20260707
 --[[
     VoltzUI - Clean Roblox UI Library
-    BUILD: VOLTZUI-1.2.9-DROPDOWN-ICON-FIX-20260707
+    BUILD: VOLTZUI-1.2.10-DROPDOWN-HEADER-LOCK-20260707
     Theme: clean dark + blue accent
     External icons: https://github.com/Footagesus/Icons
 
@@ -20,8 +20,8 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.2.9",
-    Build = "VOLTZUI-1.2.9-DROPDOWN-ICON-FIX-20260707",
+    Version = "1.2.10",
+    Build = "VOLTZUI-1.2.10-DROPDOWN-HEADER-LOCK-20260707",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -1317,17 +1317,39 @@ function SectionMethods:AddDropdown(options)
         Callback = function() end,
     }, options)
 
-    local collapsedHeight = options.Desc and 62 or 52
+    -- Dropdowns need a fixed header and a separate expandable list area.
+    -- Keeping the title, icon and selector inside the animated outer frame
+    -- can make them appear to shift when the outer height changes.
+    local collapsedHeight = options.Desc and 72 or 60
     local base = createElementBase(self, options, collapsedHeight)
 
-    -- Keep the left-side control icon anchored to the collapsed header.
-    -- The dropdown frame grows when opened; using Y.Scale = 0.5 would
-    -- recenter the icon against the expanded frame and make it move down.
+    local header = create("Frame", {
+        Name = "DropdownHeader",
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        Position = UDim2.fromOffset(0, 0),
+        Size = UDim2.new(1, 0, 0, collapsedHeight),
+        Parent = base.Frame,
+        ZIndex = 4,
+    })
+
+    -- Move every header object into the fixed-height header container.
+    -- The outer card may grow, but this header never changes height.
     if base.Icon and base.Icon.Frame then
+        base.Icon.Frame.Parent = header
+        base.Icon.Frame.AnchorPoint = Vector2.new(0, 0)
         base.Icon.Frame.Position = UDim2.fromOffset(
             16,
             math.floor((collapsedHeight - base.Icon.Frame.Size.Y.Offset) / 2)
         )
+    end
+
+    if base.Title then
+        base.Title.Parent = header
+    end
+
+    if base.Description then
+        base.Description.Parent = header
     end
 
     local open = false
@@ -1345,7 +1367,7 @@ function SectionMethods:AddDropdown(options)
         BackgroundColor3 = Theme.Surface3,
         Position = UDim2.new(1, -170, 0, 10),
         Size = UDim2.fromOffset(156, 34),
-        Parent = base.Frame,
+        Parent = header,
         ZIndex = 5,
     })
     corner(selector, 10)
@@ -1384,7 +1406,7 @@ function SectionMethods:AddDropdown(options)
         ZIndex = 6,
     })
 
-    local listLayout = create("UIListLayout", {
+    create("UIListLayout", {
         Padding = UDim.new(0, 5),
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = list,
@@ -1425,15 +1447,25 @@ function SectionMethods:AddDropdown(options)
     local function setOpen(value)
         open = value == true
         local visibleCount = math.min(#values, 5)
-        local listHeight = visibleCount > 0 and (visibleCount * 35 + math.max(visibleCount - 1, 0) * 5) or 0
+        local listHeight = visibleCount > 0
+            and (visibleCount * 35 + math.max(visibleCount - 1, 0) * 5)
+            or 0
+
         list.Visible = open
         list.Size = UDim2.new(1, -28, 0, listHeight)
+
         tween(base.Frame, 0.2, {
-            Size = UDim2.new(1, 0, 0, open and (collapsedHeight + listHeight + 18) or collapsedHeight),
-        })
+            Size = UDim2.new(
+                1,
+                0,
+                0,
+                open and (collapsedHeight + listHeight + 18) or collapsedHeight
+            ),
+        }, Enum.EasingStyle.Quint)
+
         tween(arrow.Frame, 0.2, {
             Rotation = open and 180 or 0,
-        })
+        }, Enum.EasingStyle.Quint)
     end
 
     local function rebuild()
@@ -1551,7 +1583,13 @@ function SectionMethods:AddDropdown(options)
     end)
 
     rebuild()
-    return self.Tab.Window:_RegisterControl(self, options, controller, options.Default, options.Multi and "multi-dropdown" or "dropdown")
+    return self.Tab.Window:_RegisterControl(
+        self,
+        options,
+        controller,
+        options.Default,
+        options.Multi and "multi-dropdown" or "dropdown"
+    )
 end
 
 function SectionMethods:AddInput(options)
