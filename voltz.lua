@@ -1,15 +1,3 @@
--- BUILD: VOLTZUI-1.4.0-PARAGRAPH-LOCALES-20260707
---[[
-    VoltzUI - Clean Roblox UI Library
-    BUILD: VOLTZUI-1.4.0-PARAGRAPH-LOCALES-20260707
-    Theme: clean dark + selectable accent presets
-    External icons: https://github.com/Footagesus/Icons
-
-    Designed for client-side Roblox/Luau environments that support HttpGet + loadstring.
-    Includes persistent flags/config support through executor file APIs.
-    In Studio, you can inject your own compatible icon provider with VoltzUI:SetIconProvider(provider).
-]]
-
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -20,8 +8,8 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.4.0",
-    Build = "VOLTZUI-1.4.0-PARAGRAPH-LOCALES-20260707",
+    Version = "1.4.1",
+    Build = "VOLTZUI-1.4.1-NOTIFY-BOTTOM-RIGHT-20260707",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -3671,6 +3659,7 @@ function VoltzUI:CreateWindow(options)
         Language = VoltzUI.DefaultLanguage or "English",
         Theme = VoltzUI.DefaultTheme or "Ocean Blue",
         HeaderHeight = 60,
+        NotificationPosition = "BottomRight",
         Config = {
             Enabled = false,
         },
@@ -4032,17 +4021,36 @@ function VoltzUI:CreateWindow(options)
         ZIndex = 3,
     })
 
+    local notificationPositionName = tostring(options.NotificationPosition or "BottomRight")
+        :lower()
+        :gsub("[%s_%-]", "")
+    local notificationOnLeft = notificationPositionName:find("left", 1, true) ~= nil
+    local notificationOnBottom = notificationPositionName:find("bottom", 1, true) ~= nil
+
     local notificationList = create("Frame", {
-        AnchorPoint = Vector2.new(1, 0),
+        AnchorPoint = Vector2.new(
+            notificationOnLeft and 0 or 1,
+            notificationOnBottom and 1 or 0
+        ),
         BackgroundTransparency = 1,
-        Position = UDim2.new(1, -18, 0, 18),
+        Position = UDim2.new(
+            notificationOnLeft and 0 or 1,
+            notificationOnLeft and 18 or -18,
+            notificationOnBottom and 1 or 0,
+            notificationOnBottom and -18 or 18
+        ),
         Size = UDim2.fromOffset(300, 600),
         Parent = screenGui,
         ZIndex = 100,
     })
-    create("UIListLayout", {
+    local notificationLayout = create("UIListLayout", {
         Padding = UDim.new(0, 8),
-        HorizontalAlignment = Enum.HorizontalAlignment.Right,
+        HorizontalAlignment = notificationOnLeft
+            and Enum.HorizontalAlignment.Left
+            or Enum.HorizontalAlignment.Right,
+        VerticalAlignment = notificationOnBottom
+            and Enum.VerticalAlignment.Bottom
+            or Enum.VerticalAlignment.Top,
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = notificationList,
     })
@@ -4063,6 +4071,8 @@ function VoltzUI:CreateWindow(options)
         ActiveTitle = activeTitle,
         ActiveDescription = activeDescription,
         NotificationList = notificationList,
+        NotificationLayout = notificationLayout,
+        NotificationPosition = options.NotificationPosition or "BottomRight",
         Tabs = {},
         SelectedTab = nil,
         Visible = true,
