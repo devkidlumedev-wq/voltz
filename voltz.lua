@@ -1,3 +1,15 @@
+-- BUILD: VOLTZUI-1.4.4-SCROLL-RECALC-FIX-20260707
+--[[
+    VoltzUI - Clean Roblox UI Library
+    BUILD: VOLTZUI-1.4.4-SCROLL-RECALC-FIX-20260707
+    Theme: clean dark + selectable accent presets
+    External icons: https://github.com/Footagesus/Icons
+
+    Designed for client-side Roblox/Luau environments that support HttpGet + loadstring.
+    Includes persistent flags/config support through executor file APIs.
+    In Studio, you can inject your own compatible icon provider with VoltzUI:SetIconProvider(provider).
+]]
+
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
@@ -8,8 +20,8 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.4.3",
-    Build = "VOLTZUI-1.4.3-SCROLL-CANVAS-FIX-20260707",
+    Version = "1.4.4",
+    Build = "VOLTZUI-1.4.4-SCROLL-RECALC-FIX-20260707",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -1132,53 +1144,151 @@ end
 
 local function bindVerticalCanvas(scrollingFrame, listLayout, extraBottom)
     extraBottom = math.max(tonumber(extraBottom) or 0, 0)
+
     scrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.None
     scrollingFrame.ScrollingDirection = Enum.ScrollingDirection.Y
     scrollingFrame.ElasticBehavior = Enum.ElasticBehavior.Never
     scrollingFrame.ScrollingEnabled = true
 
     local updateQueued = false
+    local trackedObjects = setmetatable({}, { __mode = "k" })
+    local trackedConnections = setmetatable({}, { __mode = "k" })
+
+    local function readPaddingHeight()
+        local total = 0
+        local absoluteHeight = scrollingFrame.AbsoluteSize.Y
+
+        for _, child in ipairs(scrollingFrame:GetChildren()) do
+            if child:IsA("UIPadding") then
+                total = total
+                    + child.PaddingTop.Offset
+                    + child.PaddingBottom.Offset
+                    + (child.PaddingTop.Scale * absoluteHeight)
+                    + (child.PaddingBottom.Scale * absoluteHeight)
+            end
+        end
+
+        return total
+    end
+
+    local function calculateContentHeight()
+        local layoutHeight = math.ceil(listLayout.AbsoluteContentSize.Y)
+        local paddingHeight = math.ceil(readPaddingHeight())
+        return math.max(0, layoutHeight + paddingHeight + extraBottom)
+    end
+
+    local function applyCanvas()
+        if not scrollingFrame.Parent or not listLayout.Parent then
+            return
+        end
+
+        local contentHeight = calculateContentHeight()
+        scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, contentHeight)
+
+        local viewportHeight = scrollingFrame.AbsoluteSize.Y
+        local ok, absoluteWindowSize = pcall(function()
+            return scrollingFrame.AbsoluteWindowSize
+        end)
+        if ok and absoluteWindowSize and absoluteWindowSize.Y > 0 then
+            viewportHeight = absoluteWindowSize.Y
+        end
+
+        local maxCanvasY = math.max(0, contentHeight - viewportHeight)
+        local current = scrollingFrame.CanvasPosition
+        local clampedY = math.clamp(current.Y, 0, maxCanvasY)
+
+        if current.X ~= 0 or math.abs(current.Y - clampedY) > 0.5 then
+            scrollingFrame.CanvasPosition = Vector2.new(0, clampedY)
+        end
+    end
 
     local function updateCanvas()
         if updateQueued then
             return
         end
+
         updateQueued = true
-
         task.defer(function()
+            RunService.Heartbeat:Wait()
+            RunService.Heartbeat:Wait()
             updateQueued = false
-            if not scrollingFrame.Parent or not listLayout.Parent then
-                return
-            end
-
-            local contentHeight = math.max(
-                0,
-                math.ceil(listLayout.AbsoluteContentSize.Y + extraBottom)
-            )
-
-            scrollingFrame.CanvasSize = UDim2.fromOffset(0, contentHeight)
-
-            local viewportHeight = scrollingFrame.AbsoluteSize.Y
-            local ok, absoluteWindowSize = pcall(function()
-                return scrollingFrame.AbsoluteWindowSize
-            end)
-            if ok and absoluteWindowSize and absoluteWindowSize.Y > 0 then
-                viewportHeight = absoluteWindowSize.Y
-            end
-
-            local maxCanvasY = math.max(0, contentHeight - viewportHeight)
-            local current = scrollingFrame.CanvasPosition
-            local clampedY = math.clamp(current.Y, 0, maxCanvasY)
-            if current.X ~= 0 or current.Y ~= clampedY then
-                scrollingFrame.CanvasPosition = Vector2.new(0, clampedY)
-            end
+            applyCanvas()
         end)
+    end
+
+    local function trackObject(object)
+        if trackedObjects[object] then
+            return
+        end
+        trackedObjects[object] = true
+
+        local connections = {}
+        trackedConnections[object] = connections
+
+        local function watch(propertyName)
+            local ok, signal = pcall(function()
+                return object:GetPropertyChangedSignal(propertyName)
+            end)
+            if ok and signal then
+                table.insert(connections, signal:Connect(updateCanvas))
+            end
+        end
+
+        if object:IsA("GuiObject") then
+            watch("AbsoluteSize")
+            watch("Position")
+            watch("Visible")
+        end
+
+        if object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
+            watch("Text")
+            watch("TextBounds")
+        end
+
+        if object:IsA("UIListLayout") then
+            watch("AbsoluteContentSize")
+        elseif object:IsA("UIPadding") then
+            watch("PaddingTop")
+            watch("PaddingBottom")
+        end
+
+        table.insert(connections, object.AncestryChanged:Connect(function(_, parent)
+            if parent == nil then
+                local list = trackedConnections[object]
+                if list then
+                    for _, connection in ipairs(list) do
+                        pcall(function()
+                            connection:Disconnect()
+                        end)
+                    end
+                end
+                trackedConnections[object] = nil
+                trackedObjects[object] = nil
+                updateCanvas()
+            end
+        end))
+    end
+
+    trackObject(listLayout)
+    for _, descendant in ipairs(scrollingFrame:GetDescendants()) do
+        trackObject(descendant)
     end
 
     listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas)
     scrollingFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateCanvas)
-    scrollingFrame.ChildAdded:Connect(updateCanvas)
-    scrollingFrame.ChildRemoved:Connect(updateCanvas)
+    scrollingFrame:GetPropertyChangedSignal("Visible"):Connect(updateCanvas)
+    scrollingFrame.ChildAdded:Connect(function(child)
+        trackObject(child)
+        for _, descendant in ipairs(child:GetDescendants()) do
+            trackObject(descendant)
+        end
+        updateCanvas()
+    end)
+    scrollingFrame.DescendantAdded:Connect(function(descendant)
+        trackObject(descendant)
+        updateCanvas()
+    end)
+    scrollingFrame.DescendantRemoving:Connect(updateCanvas)
 
     updateCanvas()
     return updateCanvas
@@ -3176,9 +3286,13 @@ function WindowMethods:SelectTab(tab)
     self.ActiveTitle.Text = tab.Title
     self.ActiveDescription.Text = tab.Description or ""
     self.ActiveDescription.Visible = tab.Description ~= nil and tab.Description ~= ""
-    if tab.RefreshCanvas then
-        tab.RefreshCanvas()
-    end
+
+    task.defer(function()
+        if tab and tab.Page and tab.Page.Parent and tab.RefreshScroll then
+            tab:RefreshScroll()
+        end
+    end)
+
     if not self._LoadingConfig then
         self:_QueueAutoSave()
     end
@@ -3256,7 +3370,7 @@ function WindowMethods:AddTab(options)
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = page,
     })
-    local refreshPageCanvas = bindVerticalCanvas(page, pageLayout, 18)
+    local refreshPageCanvas = bindVerticalCanvas(page, pageLayout, 0)
 
     local tab = setmetatable({
         Window = self,
@@ -3318,8 +3432,11 @@ function WindowMethods:AddTab(options)
     return tab
 end
 
-function WindowMethods:RefreshScrolling()
+function WindowMethods:RefreshScrolling(resetToTop)
     for _, tab in ipairs(self.Tabs) do
+        if resetToTop == true and tab.Page then
+            tab.Page.CanvasPosition = Vector2.new(0, 0)
+        end
         if tab.RefreshScroll then
             tab:RefreshScroll()
         end
