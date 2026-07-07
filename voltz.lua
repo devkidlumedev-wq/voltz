@@ -1,3 +1,12 @@
+--[[
+    VoltzUI - Clean Roblox UI Library
+    Theme: clean dark + blue accent
+    External icons: https://github.com/Footagesus/Icons
+
+    Designed for client-side Roblox/Luau environments that support HttpGet + loadstring.
+    In Studio, you can inject your own compatible icon provider with VoltzUI:SetIconProvider(provider).
+]]
+
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
