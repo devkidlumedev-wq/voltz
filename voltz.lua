@@ -1,27 +1,16 @@
--- BUILD: VOLTZUI-1.4.4-SCROLL-RECALC-FIX-20260707
---[[
-    VoltzUI - Clean Roblox UI Library
-    BUILD: VOLTZUI-1.4.4-SCROLL-RECALC-FIX-20260707
-    Theme: clean dark + selectable accent presets
-    External icons: https://github.com/Footagesus/Icons
-
-    Designed for client-side Roblox/Luau environments that support HttpGet + loadstring.
-    Includes persistent flags/config support through executor file APIs.
-    In Studio, you can inject your own compatible icon provider with VoltzUI:SetIconProvider(provider).
-]]
-
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
+local GuiService = game:GetService("GuiService")
 local HttpService = game:GetService("HttpService")
 
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.4.4",
-    Build = "VOLTZUI-1.4.4-SCROLL-RECALC-FIX-20260707",
+    Version = "1.4.5",
+    Build = "VOLTZUI-1.4.5-MOBILE-TOUCH-SCROLL-20260708",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -1142,13 +1131,213 @@ local function tween(object, duration, properties, style, direction)
     return animation
 end
 
-local function bindVerticalCanvas(scrollingFrame, listLayout, extraBottom)
+-- Roblox normally scrolls ScrollingFrame objects on touch, but some mobile
+-- executors and nested interactive controls can swallow the drag gesture.
+-- This registry provides a touch-only fallback and always chooses the
+-- top-most/smallest scrolling frame under the finger (for example, an open
+-- dropdown instead of the page behind it).
+local TouchScrollRegistry = setmetatable({}, { __mode = "k" })
+local ActiveTouchScroll = nil
+local TouchScrollConnectionsBound = false
+
+local function isGuiTreeVisible(guiObject)
+    if not guiObject or not guiObject.Parent then
+        return false
+    end
+
+    local current = guiObject
+    while current do
+        if current:IsA("GuiObject") then
+            if not current.Visible then
+                return false
+            end
+            if current.AbsoluteSize.X <= 0 or current.AbsoluteSize.Y <= 0 then
+                return false
+            end
+        end
+        if current:IsA("ScreenGui") then
+            return current.Enabled
+        end
+        current = current.Parent
+    end
+
+    return true
+end
+
+local function pointInsideGui(guiObject, point)
+    local position = guiObject.AbsolutePosition
+    local size = guiObject.AbsoluteSize
+    return point.X >= position.X
+        and point.Y >= position.Y
+        and point.X <= position.X + size.X
+        and point.Y <= position.Y + size.Y
+end
+
+local function effectiveGuiScale(guiObject)
+    local scale = 1
+    local current = guiObject
+
+    while current do
+        local uiScale = current:FindFirstChildOfClass("UIScale")
+        if uiScale then
+            scale = scale * math.max(uiScale.Scale, 0.01)
+        end
+        current = current.Parent
+    end
+
+    return math.max(scale, 0.01)
+end
+
+local function maxCanvasPositionY(scrollingFrame)
+    -- CanvasPosition is expressed in the ScrollingFrame's unscaled UI units.
+    -- AbsoluteSize is rendered after UIScale, so convert the viewport back to
+    -- logical units before clamping the canvas position.
+    local scale = effectiveGuiScale(scrollingFrame)
+    local canvasHeight = scrollingFrame.CanvasSize.Y.Offset
+        + (scrollingFrame.CanvasSize.Y.Scale * (scrollingFrame.AbsoluteSize.Y / scale))
+    local viewportHeight = scrollingFrame.AbsoluteSize.Y / scale
+
+    return math.max(0, canvasHeight - viewportHeight)
+end
+
+local function bindTouchScrollConnections()
+    if TouchScrollConnectionsBound then
+        return
+    end
+    TouchScrollConnectionsBound = true
+
+    UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        local point = input.Position
+        local bestFrame = nil
+        local bestZIndex = -math.huge
+        local bestArea = math.huge
+
+        for scrollingFrame, enabled in pairs(TouchScrollRegistry) do
+            if enabled
+                and scrollingFrame:IsA("ScrollingFrame")
+                and scrollingFrame.ScrollingEnabled == false
+                and isGuiTreeVisible(scrollingFrame)
+                and pointInsideGui(scrollingFrame, point)
+                and maxCanvasPositionY(scrollingFrame) > 0.5 then
+
+                local area = scrollingFrame.AbsoluteSize.X * scrollingFrame.AbsoluteSize.Y
+                local zIndex = scrollingFrame.ZIndex
+                if zIndex > bestZIndex or (zIndex == bestZIndex and area < bestArea) then
+                    bestFrame = scrollingFrame
+                    bestZIndex = zIndex
+                    bestArea = area
+                end
+            end
+        end
+
+        if bestFrame then
+            ActiveTouchScroll = {
+                Input = input,
+                Frame = bestFrame,
+                StartPosition = input.Position,
+                StartCanvas = bestFrame.CanvasPosition,
+                LastPosition = input.Position,
+                LastTime = os.clock(),
+                Velocity = 0,
+                Dragging = false,
+            }
+        end
+    end)
+
+    UserInputService.InputChanged:Connect(function(input)
+        local state = ActiveTouchScroll
+        if not state or input ~= state.Input then
+            return
+        end
+
+        local frame = state.Frame
+        if not frame or not frame.Parent then
+            ActiveTouchScroll = nil
+            return
+        end
+
+        local delta = input.Position - state.StartPosition
+        if not state.Dragging then
+            if math.abs(delta.Y) < 7 then
+                return
+            end
+            if math.abs(delta.Y) < math.abs(delta.X) * 0.6 then
+                return
+            end
+            state.Dragging = true
+        end
+
+        local scale = effectiveGuiScale(frame)
+        local targetY = state.StartCanvas.Y - (delta.Y / scale)
+        targetY = math.clamp(targetY, 0, maxCanvasPositionY(frame))
+        frame.CanvasPosition = Vector2.new(0, targetY)
+
+        local now = os.clock()
+        local elapsed = math.max(now - state.LastTime, 1 / 240)
+        state.Velocity = -((input.Position.Y - state.LastPosition.Y) / scale) / elapsed
+        state.LastPosition = input.Position
+        state.LastTime = now
+    end)
+
+    UserInputService.InputEnded:Connect(function(input)
+        local state = ActiveTouchScroll
+        if not state or input ~= state.Input then
+            return
+        end
+        ActiveTouchScroll = nil
+
+        local frame = state.Frame
+        if not state.Dragging or not frame or not frame.Parent then
+            return
+        end
+
+        local velocity = math.clamp(state.Velocity or 0, -2200, 2200)
+        if math.abs(velocity) < 80 then
+            return
+        end
+
+        local duration = math.clamp(math.abs(velocity) / 4200, 0.12, 0.42)
+        local targetY = math.clamp(
+            frame.CanvasPosition.Y + (velocity * duration * 0.36),
+            0,
+            maxCanvasPositionY(frame)
+        )
+
+        tween(frame, duration, {
+            CanvasPosition = Vector2.new(0, targetY),
+        }, Enum.EasingStyle.Quint)
+    end)
+end
+
+local function registerTouchScrolling(scrollingFrame, enabled)
+    local shouldUseFallback = enabled == true
+        and UserInputService.TouchEnabled
+
+    if shouldUseFallback then
+        -- Programmatic CanvasPosition updates continue to work while native
+        -- scrolling is disabled, preventing the same drag from being applied twice.
+        scrollingFrame.ScrollingEnabled = false
+        scrollingFrame.Active = true
+        scrollingFrame.ScrollBarThickness = math.max(scrollingFrame.ScrollBarThickness, 4)
+        TouchScrollRegistry[scrollingFrame] = true
+        bindTouchScrollConnections()
+    else
+        scrollingFrame.ScrollingEnabled = true
+        TouchScrollRegistry[scrollingFrame] = nil
+    end
+end
+
+local function bindVerticalCanvas(scrollingFrame, listLayout, extraBottom, touchScrollEnabled)
     extraBottom = math.max(tonumber(extraBottom) or 0, 0)
 
     scrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.None
     scrollingFrame.ScrollingDirection = Enum.ScrollingDirection.Y
     scrollingFrame.ElasticBehavior = Enum.ElasticBehavior.Never
-    scrollingFrame.ScrollingEnabled = true
+    registerTouchScrolling(scrollingFrame, touchScrollEnabled)
 
     local updateQueued = false
     local trackedObjects = setmetatable({}, { __mode = "k" })
@@ -2229,7 +2418,7 @@ function SectionMethods:AddDropdown(options)
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = list,
     })
-    local refreshListCanvas = bindVerticalCanvas(list, listLayout, 0)
+    local refreshListCanvas = bindVerticalCanvas(list, listLayout, 0, self.Tab.Window.MobileTouchScroll)
 
     local controller = {}
 
@@ -3370,7 +3559,7 @@ function WindowMethods:AddTab(options)
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = page,
     })
-    local refreshPageCanvas = bindVerticalCanvas(page, pageLayout, 0)
+    local refreshPageCanvas = bindVerticalCanvas(page, pageLayout, 0, self.MobileTouchScroll)
 
     local tab = setmetatable({
         Window = self,
@@ -4059,6 +4248,10 @@ function VoltzUI:CreateWindow(options)
         Size = UDim2.fromOffset(690, 470),
         ToggleKey = Enum.KeyCode.RightShift,
         MobileButton = true,
+        MobileResponsive = true,
+        MobileTouchScroll = true,
+        MobileMargin = 12,
+        MobileSidebarWidth = 150,
         Acrylic = false,
         Font = "NotoSansThai",
         Language = VoltzUI.DefaultLanguage or "English",
@@ -4069,6 +4262,9 @@ function VoltzUI:CreateWindow(options)
             Enabled = false,
         },
     }, options)
+
+    local mobileMode = options.MobileResponsive ~= false and UserInputService.TouchEnabled
+    local mobileTouchScroll = options.MobileTouchScroll ~= false and UserInputService.TouchEnabled
 
     self:SetFont(options.Font or "NotoSansThai")
     if options.FontScale ~= nil then
@@ -4099,7 +4295,10 @@ function VoltzUI:CreateWindow(options)
 
     local initialPosition = UDim2.fromScale(0.5, 0.5)
     local initialWindowData = loadedConfig and loadedConfig.Window
-    if config.SaveWindowPosition and type(initialWindowData) == "table" and initialWindowData.Position then
+    if not mobileMode
+        and config.SaveWindowPosition
+        and type(initialWindowData) == "table"
+        and initialWindowData.Position then
         local savedPosition = deserializeValue(initialWindowData.Position)
         if typeof(savedPosition) == "UDim2" then
             initialPosition = savedPosition
@@ -4168,12 +4367,50 @@ function VoltzUI:CreateWindow(options)
         if not camera then
             return
         end
+
         local viewport = camera.ViewportSize
-        local desiredWidth = options.Size.X.Offset + 40
-        local desiredHeight = options.Size.Y.Offset + 40
-        local scale = math.min(1, viewport.X / desiredWidth, viewport.Y / desiredHeight)
+        local margin = mobileMode and math.max(tonumber(options.MobileMargin) or 12, 4) or 20
+        local insetTopLeft = Vector2.new(0, 0)
+        local insetBottomRight = Vector2.new(0, 0)
+
+        if mobileMode then
+            pcall(function()
+                insetTopLeft, insetBottomRight = GuiService:GetGuiInset()
+            end)
+        end
+
+        local availableWidth = math.max(
+            viewport.X - insetTopLeft.X - insetBottomRight.X - (margin * 2),
+            1
+        )
+        local availableHeight = math.max(
+            viewport.Y - insetTopLeft.Y - insetBottomRight.Y - (margin * 2),
+            1
+        )
+        local baseWidth = math.max(options.Size.X.Offset, 1)
+        local baseHeight = math.max(options.Size.Y.Offset, 1)
+        local scale = math.min(1, availableWidth / baseWidth, availableHeight / baseHeight)
+
         uiScale.Scale = scale
         shadowScale.Scale = scale
+
+        if mobileMode then
+            local centerOffsetX = (insetTopLeft.X - insetBottomRight.X) * 0.5
+            local centerOffsetY = (insetTopLeft.Y - insetBottomRight.Y) * 0.5
+            local centeredPosition = UDim2.new(0.5, centerOffsetX, 0.5, centerOffsetY)
+            main.Position = centeredPosition
+            shadow.Position = centeredPosition
+        end
+
+        if VoltzUI.ActiveWindow
+            and VoltzUI.ActiveWindow.Main == main
+            and type(VoltzUI.ActiveWindow.RefreshScrolling) == "function" then
+            task.defer(function()
+                if VoltzUI.ActiveWindow and VoltzUI.ActiveWindow.Main == main then
+                    VoltzUI.ActiveWindow:RefreshScrolling(false)
+                end
+            end)
+        end
     end
 
     updateScale()
@@ -4296,10 +4533,14 @@ function VoltzUI:CreateWindow(options)
         ZIndex = 3,
     })
 
+    local sidebarWidth = mobileMode
+        and math.clamp(tonumber(options.MobileSidebarWidth) or 150, 132, 176)
+        or 176
+
     local sidebar = create("Frame", {
         BackgroundColor3 = Theme.Surface,
         BorderSizePixel = 0,
-        Size = UDim2.new(0, 176, 1, 0),
+        Size = UDim2.new(0, sidebarWidth, 1, 0),
         Parent = body,
         ZIndex = 4,
     })
@@ -4368,13 +4609,13 @@ function VoltzUI:CreateWindow(options)
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = tabList,
     })
-    bindVerticalCanvas(tabList, tabListLayout, 0)
+    bindVerticalCanvas(tabList, tabListLayout, 0, mobileTouchScroll)
 
     local content = create("Frame", {
         BackgroundColor3 = Theme.Background,
         BorderSizePixel = 0,
-        Position = UDim2.fromOffset(176, 0),
-        Size = UDim2.new(1, -176, 1, 0),
+        Position = UDim2.fromOffset(sidebarWidth, 0),
+        Size = UDim2.new(1, -sidebarWidth, 1, 0),
         Parent = body,
         ZIndex = 3,
     })
@@ -4427,10 +4668,11 @@ function VoltzUI:CreateWindow(options)
         ZIndex = 4,
     })
 
+    local contentPadding = mobileMode and 14 or 22
     local pageContainer = create("Frame", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(22, 66),
-        Size = UDim2.new(1, -44, 1, -66),
+        Position = UDim2.fromOffset(contentPadding, 66),
+        Size = UDim2.new(1, -(contentPadding * 2), 1, -66),
         ClipsDescendants = true,
         Parent = content,
         ZIndex = 3,
@@ -4495,6 +4737,9 @@ function VoltzUI:CreateWindow(options)
         Size = options.Size,
         ToggleKey = options.ToggleKey,
         MobileButton = nil,
+        MobileMode = mobileMode,
+        MobileTouchScroll = mobileTouchScroll,
+        UIScale = uiScale,
         Config = config,
         LoadedConfig = loadedConfig,
         PendingSelectedTab = loadedConfig and loadedConfig.Window and loadedConfig.Window.SelectedTab or nil,
@@ -4545,8 +4790,8 @@ function VoltzUI:CreateWindow(options)
         local mobileButton = createTextButton({
             AnchorPoint = Vector2.new(1, 1),
             BackgroundColor3 = Theme.AccentDark,
-            Position = UDim2.new(1, -18, 1, -18),
-            Size = UDim2.fromOffset(48, 48),
+            Position = UDim2.new(1, -14, 1, -14),
+            Size = UDim2.fromOffset(52, 52),
             Visible = false,
             Parent = screenGui,
             ZIndex = 120,
