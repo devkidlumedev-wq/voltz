@@ -8,8 +8,8 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.4.2",
-    Build = "VOLTZUI-1.4.2-CONFIG-AUTOLOAD-20260707",
+    Version = "1.4.3",
+    Build = "VOLTZUI-1.4.3-SCROLL-CANVAS-FIX-20260707",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -1130,6 +1130,60 @@ local function tween(object, duration, properties, style, direction)
     return animation
 end
 
+local function bindVerticalCanvas(scrollingFrame, listLayout, extraBottom)
+    extraBottom = math.max(tonumber(extraBottom) or 0, 0)
+    scrollingFrame.AutomaticCanvasSize = Enum.AutomaticSize.None
+    scrollingFrame.ScrollingDirection = Enum.ScrollingDirection.Y
+    scrollingFrame.ElasticBehavior = Enum.ElasticBehavior.Never
+    scrollingFrame.ScrollingEnabled = true
+
+    local updateQueued = false
+
+    local function updateCanvas()
+        if updateQueued then
+            return
+        end
+        updateQueued = true
+
+        task.defer(function()
+            updateQueued = false
+            if not scrollingFrame.Parent or not listLayout.Parent then
+                return
+            end
+
+            local contentHeight = math.max(
+                0,
+                math.ceil(listLayout.AbsoluteContentSize.Y + extraBottom)
+            )
+
+            scrollingFrame.CanvasSize = UDim2.fromOffset(0, contentHeight)
+
+            local viewportHeight = scrollingFrame.AbsoluteSize.Y
+            local ok, absoluteWindowSize = pcall(function()
+                return scrollingFrame.AbsoluteWindowSize
+            end)
+            if ok and absoluteWindowSize and absoluteWindowSize.Y > 0 then
+                viewportHeight = absoluteWindowSize.Y
+            end
+
+            local maxCanvasY = math.max(0, contentHeight - viewportHeight)
+            local current = scrollingFrame.CanvasPosition
+            local clampedY = math.clamp(current.Y, 0, maxCanvasY)
+            if current.X ~= 0 or current.Y ~= clampedY then
+                scrollingFrame.CanvasPosition = Vector2.new(0, clampedY)
+            end
+        end)
+    end
+
+    listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(updateCanvas)
+    scrollingFrame:GetPropertyChangedSignal("AbsoluteSize"):Connect(updateCanvas)
+    scrollingFrame.ChildAdded:Connect(updateCanvas)
+    scrollingFrame.ChildRemoved:Connect(updateCanvas)
+
+    updateCanvas()
+    return updateCanvas
+end
+
 local function safeCallback(callback, ...)
     if type(callback) ~= "function" then
         return
@@ -2048,7 +2102,9 @@ function SectionMethods:AddDropdown(options)
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         CanvasSize = UDim2.new(),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        AutomaticCanvasSize = Enum.AutomaticSize.None,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
+        ElasticBehavior = Enum.ElasticBehavior.Never,
         Position = UDim2.new(0, 14, 0, collapsedHeight + 8),
         Size = UDim2.new(1, -28, 0, 0),
         ScrollBarThickness = 2,
@@ -2058,11 +2114,12 @@ function SectionMethods:AddDropdown(options)
         ZIndex = 6,
     })
 
-    create("UIListLayout", {
+    local listLayout = create("UIListLayout", {
         Padding = UDim.new(0, 5),
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = list,
     })
+    local refreshListCanvas = bindVerticalCanvas(list, listLayout, 0)
 
     local controller = {}
 
@@ -2106,7 +2163,10 @@ function SectionMethods:AddDropdown(options)
             or 0
 
         list.Visible = open
+        list.Active = open
+        list.ScrollingEnabled = open and #values > 5
         list.Size = UDim2.new(1, -28, 0, listHeight)
+        refreshListCanvas()
 
         tween(base.Frame, 0.2, {
             Size = UDim2.new(
@@ -2184,6 +2244,7 @@ function SectionMethods:AddDropdown(options)
         end
 
         refreshVisuals()
+        refreshListCanvas()
         if open then
             setOpen(true)
         end
@@ -2481,6 +2542,9 @@ function SectionMethods:AddParagraph(options)
             end
 
             frame.Size = UDim2.new(1, 0, 0, targetHeight)
+            if self.Tab and self.Tab.RefreshScroll then
+                self.Tab:RefreshScroll()
+            end
         end)
     end
 
@@ -2589,6 +2653,12 @@ end
 
 local TabMethods = {}
 TabMethods.__index = TabMethods
+
+function TabMethods:RefreshScroll()
+    if self.RefreshCanvas then
+        self.RefreshCanvas()
+    end
+end
 
 function TabMethods:AddSection(options)
     if type(options) == "string" then
@@ -3106,6 +3176,9 @@ function WindowMethods:SelectTab(tab)
     self.ActiveTitle.Text = tab.Title
     self.ActiveDescription.Text = tab.Description or ""
     self.ActiveDescription.Visible = tab.Description ~= nil and tab.Description ~= ""
+    if tab.RefreshCanvas then
+        tab.RefreshCanvas()
+    end
     if not self._LoadingConfig then
         self:_QueueAutoSave()
     end
@@ -3164,7 +3237,10 @@ function WindowMethods:AddTab(options)
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         CanvasSize = UDim2.new(),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        AutomaticCanvasSize = Enum.AutomaticSize.None,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
+        ElasticBehavior = Enum.ElasticBehavior.Never,
+        ScrollingEnabled = true,
         Position = UDim2.new(),
         Size = UDim2.fromScale(1, 1),
         ScrollBarThickness = 2,
@@ -3175,11 +3251,12 @@ function WindowMethods:AddTab(options)
     })
     padding(page, 2, 10, 0, 18)
 
-    create("UIListLayout", {
+    local pageLayout = create("UIListLayout", {
         Padding = UDim.new(0, 16),
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = page,
     })
+    local refreshPageCanvas = bindVerticalCanvas(page, pageLayout, 18)
 
     local tab = setmetatable({
         Window = self,
@@ -3190,6 +3267,8 @@ function WindowMethods:AddTab(options)
         Indicator = indicator,
         IconObject = iconObject,
         Page = page,
+        PageLayout = pageLayout,
+        RefreshCanvas = refreshPageCanvas,
     }, TabMethods)
 
     table.insert(self.Tabs, tab)
@@ -3237,6 +3316,14 @@ function WindowMethods:AddTab(options)
     end
 
     return tab
+end
+
+function WindowMethods:RefreshScrolling()
+    for _, tab in ipairs(self.Tabs) do
+        if tab.RefreshScroll then
+            tab:RefreshScroll()
+        end
+    end
 end
 
 function WindowMethods:SetVisible(value)
@@ -4150,18 +4237,21 @@ function VoltzUI:CreateWindow(options)
         BackgroundTransparency = 1,
         BorderSizePixel = 0,
         CanvasSize = UDim2.new(),
-        AutomaticCanvasSize = Enum.AutomaticSize.Y,
+        AutomaticCanvasSize = Enum.AutomaticSize.None,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
+        ElasticBehavior = Enum.ElasticBehavior.Never,
         Position = UDim2.fromOffset(10, 38),
         Size = UDim2.new(1, -20, 1, -50),
         ScrollBarThickness = 0,
         Parent = sidebar,
         ZIndex = 5,
     })
-    create("UIListLayout", {
+    local tabListLayout = create("UIListLayout", {
         Padding = UDim.new(0, 5),
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = tabList,
     })
+    bindVerticalCanvas(tabList, tabListLayout, 0)
 
     local content = create("Frame", {
         BackgroundColor3 = Theme.Background,
