@@ -1,8 +1,8 @@
--- BUILD: VOLTZUI-1.2.10-DROPDOWN-HEADER-LOCK-20260707
+-- BUILD: VOLTZUI-1.3.0-THEME-HEADER-20260707
 --[[
     VoltzUI - Clean Roblox UI Library
-    BUILD: VOLTZUI-1.2.10-DROPDOWN-HEADER-LOCK-20260707
-    Theme: clean dark + blue accent
+    BUILD: VOLTZUI-1.3.0-THEME-HEADER-20260707
+    Theme: clean dark + selectable accent presets
     External icons: https://github.com/Footagesus/Icons
 
     Designed for client-side Roblox/Luau environments that support HttpGet + loadstring.
@@ -20,8 +20,8 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.2.10",
-    Build = "VOLTZUI-1.2.10-DROPDOWN-HEADER-LOCK-20260707",
+    Version = "1.3.0",
+    Build = "VOLTZUI-1.3.0-THEME-HEADER-20260707",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -59,6 +59,100 @@ local Theme = {
     Danger = Color3.fromRGB(248, 113, 113),
     Warning = Color3.fromRGB(250, 204, 21),
 }
+
+-- Theme presets intentionally keep the same clean dark layout and change the
+-- accent family. Midnight also applies a slightly deeper blue-black surface.
+local BaseTheme = {
+    Accent = Theme.Accent,
+    AccentLight = Theme.AccentLight,
+    AccentDark = Theme.AccentDark,
+    Background = Theme.Background,
+    Surface = Theme.Surface,
+    Surface2 = Theme.Surface2,
+    Surface3 = Theme.Surface3,
+    SurfaceHover = Theme.SurfaceHover,
+    Border = Theme.Border,
+    Text = Theme.Text,
+    TextMuted = Theme.TextMuted,
+    TextDim = Theme.TextDim,
+    Success = Theme.Success,
+    Danger = Theme.Danger,
+    Warning = Theme.Warning,
+}
+
+local ThemeDefinitions = {
+    ["Ocean Blue"] = {
+        Accent = Color3.fromRGB(50, 180, 253),
+        AccentLight = Color3.fromRGB(126, 218, 255),
+        AccentDark = Color3.fromRGB(34, 145, 214),
+    },
+    ["Royal Purple"] = {
+        Accent = Color3.fromRGB(139, 92, 246),
+        AccentLight = Color3.fromRGB(196, 181, 253),
+        AccentDark = Color3.fromRGB(109, 40, 217),
+    },
+    ["Emerald"] = {
+        Accent = Color3.fromRGB(52, 211, 153),
+        AccentLight = Color3.fromRGB(167, 243, 208),
+        AccentDark = Color3.fromRGB(5, 150, 105),
+    },
+    ["Rose"] = {
+        Accent = Color3.fromRGB(244, 114, 182),
+        AccentLight = Color3.fromRGB(251, 207, 232),
+        AccentDark = Color3.fromRGB(219, 39, 119),
+    },
+    ["Amber"] = {
+        Accent = Color3.fromRGB(251, 191, 36),
+        AccentLight = Color3.fromRGB(253, 230, 138),
+        AccentDark = Color3.fromRGB(217, 119, 6),
+    },
+    ["Crimson"] = {
+        Accent = Color3.fromRGB(248, 113, 113),
+        AccentLight = Color3.fromRGB(254, 202, 202),
+        AccentDark = Color3.fromRGB(220, 38, 38),
+    },
+    ["Electric Cyan"] = {
+        Accent = Color3.fromRGB(34, 211, 238),
+        AccentLight = Color3.fromRGB(165, 243, 252),
+        AccentDark = Color3.fromRGB(8, 145, 178),
+    },
+    ["Lime"] = {
+        Accent = Color3.fromRGB(163, 230, 53),
+        AccentLight = Color3.fromRGB(217, 249, 157),
+        AccentDark = Color3.fromRGB(101, 163, 13),
+    },
+    ["Monochrome"] = {
+        Accent = Color3.fromRGB(148, 163, 184),
+        AccentLight = Color3.fromRGB(226, 232, 240),
+        AccentDark = Color3.fromRGB(71, 85, 105),
+    },
+    ["Midnight"] = {
+        Accent = Color3.fromRGB(96, 165, 250),
+        AccentLight = Color3.fromRGB(191, 219, 254),
+        AccentDark = Color3.fromRGB(37, 99, 235),
+        Background = Color3.fromRGB(7, 12, 22),
+        Surface = Color3.fromRGB(11, 18, 31),
+        Surface2 = Color3.fromRGB(23, 34, 52),
+        Surface3 = Color3.fromRGB(34, 48, 70),
+        SurfaceHover = Color3.fromRGB(30, 45, 66),
+        Border = Color3.fromRGB(54, 73, 99),
+    },
+}
+
+local ThemeOrder = {
+    "Ocean Blue",
+    "Royal Purple",
+    "Emerald",
+    "Rose",
+    "Amber",
+    "Crimson",
+    "Electric Cyan",
+    "Lime",
+    "Monochrome",
+    "Midnight",
+}
+
+local ActiveThemeName = "Ocean Blue"
 
 -- Thai-capable font system.
 -- NotoSansThai is preferred; safe fallbacks prevent the library from failing
@@ -224,6 +318,188 @@ local function cloneTable(source)
         result[key] = value
     end
     return result
+end
+
+local THEME_COLOR_KEYS = {
+    "Accent",
+    "AccentLight",
+    "AccentDark",
+    "Background",
+    "Surface",
+    "Surface2",
+    "Surface3",
+    "SurfaceHover",
+    "Border",
+    "Text",
+    "TextMuted",
+    "TextDim",
+    "Success",
+    "Danger",
+    "Warning",
+}
+
+local function composeTheme(overrides)
+    local palette = cloneTable(BaseTheme)
+    if type(overrides) == "table" then
+        for key, value in pairs(overrides) do
+            if typeof(value) == "Color3" then
+                palette[key] = value
+            end
+        end
+    end
+    return palette
+end
+
+local function findThemeName(name)
+    local requested = tostring(name or ""):lower()
+    for _, themeName in ipairs(ThemeOrder) do
+        if themeName:lower() == requested then
+            return themeName
+        end
+    end
+    return nil
+end
+
+local function resolveTheme(themeSpec)
+    if type(themeSpec) == "string" then
+        local name = findThemeName(themeSpec) or "Ocean Blue"
+        return name, composeTheme(ThemeDefinitions[name])
+    end
+
+    if type(themeSpec) == "table" then
+        local requestedPreset = themeSpec.Preset or themeSpec.Name
+        local presetName = findThemeName(requestedPreset)
+        local palette = composeTheme(presetName and ThemeDefinitions[presetName] or nil)
+        for key, value in pairs(themeSpec) do
+            if typeof(value) == "Color3" then
+                palette[key] = value
+            end
+        end
+        return presetName or tostring(themeSpec.Name or "Custom"), palette
+    end
+
+    return "Ocean Blue", composeTheme(ThemeDefinitions["Ocean Blue"])
+end
+
+local function applyThemePalette(palette)
+    for _, key in ipairs(THEME_COLOR_KEYS) do
+        if typeof(palette[key]) == "Color3" then
+            Theme[key] = palette[key]
+        end
+    end
+end
+
+local function mappedThemeColor(color, oldPalette, newPalette)
+    for _, key in ipairs(THEME_COLOR_KEYS) do
+        if oldPalette[key] == color and newPalette[key] then
+            return newPalette[key]
+        end
+    end
+    return nil
+end
+
+local function recolorGuiTree(root, oldPalette, newPalette)
+    if not root then
+        return
+    end
+
+    local objects = { root }
+    for _, descendant in ipairs(root:GetDescendants()) do
+        table.insert(objects, descendant)
+    end
+
+    for _, object in ipairs(objects) do
+        if object:IsA("GuiObject") then
+            local mappedBackground = mappedThemeColor(object.BackgroundColor3, oldPalette, newPalette)
+            if mappedBackground then
+                object.BackgroundColor3 = mappedBackground
+            end
+        end
+
+        if object:IsA("TextLabel") or object:IsA("TextButton") or object:IsA("TextBox") then
+            local mappedText = mappedThemeColor(object.TextColor3, oldPalette, newPalette)
+            if mappedText then
+                object.TextColor3 = mappedText
+            end
+        end
+
+        if object:IsA("TextBox") then
+            local mappedPlaceholder = mappedThemeColor(object.PlaceholderColor3, oldPalette, newPalette)
+            if mappedPlaceholder then
+                object.PlaceholderColor3 = mappedPlaceholder
+            end
+        end
+
+        if object:IsA("ImageLabel") or object:IsA("ImageButton") then
+            local mappedImage = mappedThemeColor(object.ImageColor3, oldPalette, newPalette)
+            if mappedImage then
+                object.ImageColor3 = mappedImage
+            end
+        end
+
+        if object:IsA("ScrollingFrame") then
+            local mappedScroll = mappedThemeColor(object.ScrollBarImageColor3, oldPalette, newPalette)
+            if mappedScroll then
+                object.ScrollBarImageColor3 = mappedScroll
+            end
+        end
+
+        if object:IsA("UIStroke") then
+            local mappedStroke = mappedThemeColor(object.Color, oldPalette, newPalette)
+            if mappedStroke then
+                object.Color = mappedStroke
+            end
+        elseif object:IsA("UIGradient") then
+            local keypoints = {}
+            for _, point in ipairs(object.Color.Keypoints) do
+                table.insert(keypoints, ColorSequenceKeypoint.new(
+                    point.Time,
+                    mappedThemeColor(point.Value, oldPalette, newPalette) or point.Value
+                ))
+            end
+            object.Color = ColorSequence.new(keypoints)
+        end
+    end
+end
+
+function VoltzUI:RegisterTheme(name, colors)
+    assert(type(name) == "string" and name ~= "", "Theme name must be a non-empty string")
+    assert(type(colors) == "table", "Theme colors must be a table")
+
+    local existing = findThemeName(name)
+    if not existing then
+        table.insert(ThemeOrder, name)
+    end
+    ThemeDefinitions[existing or name] = colors
+    return self
+end
+
+function VoltzUI:GetThemeNames()
+    local result = {}
+    for _, name in ipairs(ThemeOrder) do
+        table.insert(result, name)
+    end
+    return result
+end
+
+function VoltzUI:SetTheme(themeSpec)
+    if self.ActiveWindow
+        and self.ActiveWindow.ScreenGui
+        and self.ActiveWindow.ScreenGui.Parent
+        and type(self.ActiveWindow.SetTheme) == "function" then
+        self.ActiveWindow:SetTheme(themeSpec)
+        return self
+    end
+
+    local name, palette = resolveTheme(themeSpec)
+    applyThemePalette(palette)
+    ActiveThemeName = name
+    self.DefaultTheme = name
+    return self
+end
+
+function VoltzUI:GetTheme()
+    return ActiveThemeName, cloneTable(Theme)
 end
 
 local function deepClone(value)
@@ -963,13 +1239,29 @@ local function dragify(handle, target, changedCallback, endedCallback)
     end)
 end
 
+local function themeKeyForColor(color)
+    for _, key in ipairs(THEME_COLOR_KEYS) do
+        if Theme[key] == color then
+            return key
+        end
+    end
+    return nil
+end
+
 local function bindHover(button, normalColor, hoverColor)
+    local normalKey = themeKeyForColor(normalColor)
+    local hoverKey = themeKeyForColor(hoverColor)
+
     button.MouseEnter:Connect(function()
-        tween(button, 0.14, { BackgroundColor3 = hoverColor })
+        tween(button, 0.14, {
+            BackgroundColor3 = hoverKey and Theme[hoverKey] or hoverColor,
+        })
     end)
 
     button.MouseLeave:Connect(function()
-        tween(button, 0.14, { BackgroundColor3 = normalColor })
+        tween(button, 0.14, {
+            BackgroundColor3 = normalKey and Theme[normalKey] or normalColor,
+        })
     end)
 end
 
@@ -2414,7 +2706,8 @@ function WindowMethods:Minimize(value)
 
     self.Minimized = value == true
     self.Body.Visible = not self.Minimized
-    local targetSize = self.Minimized and UDim2.fromOffset(self.Size.X.Offset, 50) or self.Size
+    local headerHeight = self.HeaderHeight or 60
+    local targetSize = self.Minimized and UDim2.fromOffset(self.Size.X.Offset, headerHeight) or self.Size
     tween(self.Main, 0.22, {
         Size = targetSize,
     }, Enum.EasingStyle.Quint)
@@ -2428,6 +2721,71 @@ end
 
 function WindowMethods:SetToggleKey(keyCode)
     self.ToggleKey = keyCode
+end
+
+function WindowMethods:SetTheme(themeSpec)
+    local name, newPalette = resolveTheme(themeSpec)
+    local oldPalette = cloneTable(Theme)
+
+    applyThemePalette(newPalette)
+    recolorGuiTree(self.ScreenGui, oldPalette, newPalette)
+
+    ActiveThemeName = name
+    VoltzUI.DefaultTheme = name
+    self.ThemeName = name
+    return true, name
+end
+
+function WindowMethods:GetTheme()
+    return self.ThemeName or ActiveThemeName, cloneTable(Theme)
+end
+
+function WindowMethods:_AddThemeControls(section, options)
+    options = merge({
+        Title = "Theme color",
+        Desc = "Change the interface accent instantly",
+        Icon = "palette",
+        Flag = "__VoltzTheme",
+        Save = true,
+    }, options)
+
+    return section:AddDropdown({
+        Title = options.Title,
+        Desc = options.Desc,
+        Icon = options.Icon,
+        Values = VoltzUI:GetThemeNames(),
+        Default = self.ThemeName or ActiveThemeName,
+        Flag = options.Flag,
+        Save = options.Save ~= false,
+        Callback = function(value)
+            local success, selectedName = self:SetTheme(value)
+            if success then
+                safeCallback(options.Callback, selectedName)
+            end
+        end,
+    })
+end
+
+function WindowMethods:AddThemeSection(tab, options)
+    options = merge({
+        Title = "Appearance",
+        Desc = "Choose a color preset for the interface",
+    }, options)
+
+    local section = tab:AddSection({
+        Title = options.Title,
+        Desc = options.Desc,
+    })
+
+    self:_AddThemeControls(section, {
+        Title = options.ControlTitle or "Theme color",
+        Desc = options.ControlDesc or "Change the interface accent instantly",
+        Icon = options.Icon or "palette",
+        Flag = options.Flag or "__VoltzTheme",
+        Save = options.Save ~= false,
+        Callback = options.Callback,
+    })
+    return section
 end
 
 function WindowMethods:Notify(options)
@@ -2516,12 +2874,24 @@ function WindowMethods:AddConfigSection(tab, options)
     options = merge({
         Title = "Configuration",
         Desc = "Save, load and manage multiple VoltzUI configs",
+        IncludeTheme = true,
     }, options)
 
     local section = tab:AddSection({
         Title = options.Title,
         Desc = options.Desc,
     })
+
+    if options.IncludeTheme ~= false then
+        self:_AddThemeControls(section, {
+            Title = options.ThemeTitle or "Theme color",
+            Desc = options.ThemeDesc or "Choose from 10 built-in color presets",
+            Icon = "palette",
+            Flag = "__VoltzTheme",
+            Save = true,
+        })
+        section:AddDivider("Config files")
+    end
 
     local status = section:AddParagraph({
         Title = self.Config.Enabled and "Config ready" or "Config disabled",
@@ -2688,6 +3058,9 @@ function WindowMethods:Destroy()
     if self.InputConnection then
         self.InputConnection:Disconnect()
     end
+    if VoltzUI.ActiveWindow == self then
+        VoltzUI.ActiveWindow = nil
+    end
     self.ScreenGui:Destroy()
 end
 
@@ -2701,6 +3074,8 @@ function VoltzUI:CreateWindow(options)
         MobileButton = true,
         Acrylic = false,
         Font = "NotoSansThai",
+        Theme = VoltzUI.DefaultTheme or "Ocean Blue",
+        HeaderHeight = 60,
         Config = {
             Enabled = false,
         },
@@ -2710,6 +3085,11 @@ function VoltzUI:CreateWindow(options)
     if options.FontScale ~= nil then
         self:SetFontScale(options.FontScale)
     end
+
+    local initialThemeName, initialThemePalette = resolveTheme(options.Theme)
+    applyThemePalette(initialThemePalette)
+    ActiveThemeName = initialThemeName
+    self.DefaultTheme = initialThemeName
 
     local config = normalizeConfigOptions(options.Config)
     local loadedConfig = nil
@@ -2801,25 +3181,17 @@ function VoltzUI:CreateWindow(options)
         workspace.CurrentCamera:GetPropertyChangedSignal("ViewportSize"):Connect(updateScale)
     end
 
+    local headerHeight = math.max(tonumber(options.HeaderHeight) or 60, 54)
     local topbar = create("Frame", {
         BackgroundColor3 = Theme.Surface,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 54),
+        Size = UDim2.new(1, 0, 0, headerHeight),
         Parent = main,
         ZIndex = 5,
     })
     corner(topbar, 10)
-    create("UIGradient", {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Theme.Surface2),
-            ColorSequenceKeypoint.new(1, Theme.Surface),
-        }),
-        Rotation = 90,
-        Parent = topbar,
-    })
 
-    -- UICorner does not clip child backgrounds in Roblox. The topbar needs
-    -- its own rounded top corners, while this small fill keeps its bottom edge square.
+    -- Keep the lower edge square without mixing a different gradient/color band.
     create("Frame", {
         AnchorPoint = Vector2.new(0, 1),
         BackgroundColor3 = Theme.Surface,
@@ -2830,9 +3202,11 @@ function VoltzUI:CreateWindow(options)
         ZIndex = 5,
     })
 
+    -- A subtle separator is cleaner than the old solid line.
     create("Frame", {
         AnchorPoint = Vector2.new(0, 1),
         BackgroundColor3 = Theme.Border,
+        BackgroundTransparency = 0.55,
         BorderSizePixel = 0,
         Position = UDim2.new(0, 0, 1, 0),
         Size = UDim2.new(1, 0, 0, 1),
@@ -2843,24 +3217,25 @@ function VoltzUI:CreateWindow(options)
     local logoBox = create("Frame", {
         BackgroundColor3 = Theme.AccentDark,
         BorderSizePixel = 0,
-        Position = UDim2.fromOffset(14, 11),
-        Size = UDim2.fromOffset(32, 32),
+        Position = UDim2.fromOffset(14, 13),
+        Size = UDim2.fromOffset(34, 34),
         Parent = topbar,
         ZIndex = 7,
     })
-    corner(logoBox, 10)
-    local logo = createIcon(logoBox, options.Icon, 17, Color3.fromRGB(255, 255, 255), 8)
+    corner(logoBox, 11)
+    local logo = createIcon(logoBox, options.Icon, 18, Color3.fromRGB(255, 255, 255), 8)
     logo.Frame.AnchorPoint = Vector2.new(0.5, 0.5)
     logo.Frame.Position = UDim2.fromScale(0.5, 0.5)
 
     create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(58, 7),
-        Size = UDim2.new(1, -180, 0, 21),
+        Position = UDim2.fromOffset(60, 8),
+        Size = UDim2.new(1, -178, 0, 24),
         FontFace = fontFace("SemiBold"),
         Text = options.Title,
         TextColor3 = Theme.Text,
-        TextSize = fontSize(16),
+        TextSize = fontSize(15),
+        TextTruncate = Enum.TextTruncate.AtEnd,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = topbar,
         ZIndex = 7,
@@ -2868,12 +3243,13 @@ function VoltzUI:CreateWindow(options)
 
     create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(58, 27),
-        Size = UDim2.new(1, -180, 0, 17),
+        Position = UDim2.fromOffset(60, 31),
+        Size = UDim2.new(1, -178, 0, 18),
         FontFace = fontFace("Regular"),
         Text = options.Subtitle,
         TextColor3 = Theme.TextDim,
         TextSize = fontSize(10),
+        TextTruncate = Enum.TextTruncate.AtEnd,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = topbar,
         ZIndex = 7,
@@ -2881,8 +3257,8 @@ function VoltzUI:CreateWindow(options)
 
     local minimizeButton = createTextButton({
         BackgroundColor3 = Theme.Surface2,
-        Position = UDim2.new(1, -86, 0, 11),
-        Size = UDim2.fromOffset(32, 32),
+        Position = UDim2.new(1, -90, 0, 13),
+        Size = UDim2.fromOffset(34, 34),
         Parent = topbar,
         ZIndex = 8,
     })
@@ -2894,8 +3270,8 @@ function VoltzUI:CreateWindow(options)
 
     local closeButton = createTextButton({
         BackgroundColor3 = Theme.Surface2,
-        Position = UDim2.new(1, -46, 0, 11),
-        Size = UDim2.fromOffset(32, 32),
+        Position = UDim2.new(1, -48, 0, 13),
+        Size = UDim2.fromOffset(34, 34),
         Parent = topbar,
         ZIndex = 8,
     })
@@ -2914,8 +3290,8 @@ function VoltzUI:CreateWindow(options)
 
     local body = create("Frame", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(0, 54),
-        Size = UDim2.new(1, 0, 1, -54),
+        Position = UDim2.fromOffset(0, headerHeight),
+        Size = UDim2.new(1, 0, 1, -headerHeight),
         Parent = main,
         ZIndex = 3,
     })
@@ -3079,6 +3455,8 @@ function VoltzUI:CreateWindow(options)
         Main = main,
         Body = body,
         Topbar = topbar,
+        HeaderHeight = headerHeight,
+        ThemeName = initialThemeName,
         TabList = tabList,
         PageContainer = pageContainer,
         ActiveTitle = activeTitle,
@@ -3160,6 +3538,7 @@ function VoltzUI:CreateWindow(options)
         end
     end)
 
+    VoltzUI.ActiveWindow = window
     return window
 end
 
@@ -3167,6 +3546,7 @@ end
 WindowMethods.CreateTab = WindowMethods.AddTab
 WindowMethods.Notification = WindowMethods.Notify
 WindowMethods.ConfigSection = WindowMethods.AddConfigSection
+WindowMethods.ThemeSection = WindowMethods.AddThemeSection
 WindowMethods.SetVisibility = WindowMethods.SetVisible
 TabMethods.CreateSection = TabMethods.AddSection
 SectionMethods.Button = SectionMethods.AddButton
@@ -3179,6 +3559,7 @@ SectionMethods.Paragraph = SectionMethods.AddParagraph
 SectionMethods.Divider = SectionMethods.AddDivider
 
 VoltzUI.Theme = Theme
+VoltzUI.ThemePresets = ThemeDefinitions
 VoltzUI.LoadIcons = loadExternalIcons
 VoltzUI.SetFontFamily = VoltzUI.SetFont
 VoltzUI.SetTypographyScale = VoltzUI.SetFontScale
