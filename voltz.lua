@@ -1,7 +1,7 @@
--- BUILD: VOLTZUI-1.2.4-RADIUS-10-20260707
+-- BUILD: VOLTZUI-1.2.5-OUTER-CORNER-FIX-20260707
 --[[
     VoltzUI - Clean Roblox UI Library
-    BUILD: VOLTZUI-1.2.4-RADIUS-10-20260707
+    BUILD: VOLTZUI-1.2.5-OUTER-CORNER-FIX-20260707
     Theme: clean dark + blue accent
     External icons: https://github.com/Footagesus/Icons
 
@@ -20,7 +20,7 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.2.4",
+    Version = "1.2.5",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -2562,6 +2562,7 @@ function VoltzUI:CreateWindow(options)
         Parent = main,
         ZIndex = 5,
     })
+    corner(topbar, 10)
     create("UIGradient", {
         Color = ColorSequence.new({
             ColorSequenceKeypoint.new(0, Theme.Surface2),
@@ -2569,6 +2570,18 @@ function VoltzUI:CreateWindow(options)
         }),
         Rotation = 90,
         Parent = topbar,
+    })
+
+    -- UICorner does not clip child backgrounds in Roblox. The topbar needs
+    -- its own rounded top corners, while this small fill keeps its bottom edge square.
+    create("Frame", {
+        AnchorPoint = Vector2.new(0, 1),
+        BackgroundColor3 = Theme.Surface,
+        BorderSizePixel = 0,
+        Position = UDim2.new(0, 0, 1, 0),
+        Size = UDim2.new(1, 0, 0, 10),
+        Parent = topbar,
+        ZIndex = 5,
     })
 
     create("Frame", {
@@ -2668,6 +2681,28 @@ function VoltzUI:CreateWindow(options)
         Parent = body,
         ZIndex = 4,
     })
+    corner(sidebar, 10)
+
+    -- Keep only the outer bottom-left corner rounded. The top and right edges
+    -- are internal joins, so these fills keep those joins perfectly square.
+    create("Frame", {
+        BackgroundColor3 = Theme.Surface,
+        BorderSizePixel = 0,
+        Position = UDim2.fromOffset(0, 0),
+        Size = UDim2.new(1, 0, 0, 10),
+        Parent = sidebar,
+        ZIndex = 4,
+    })
+
+    create("Frame", {
+        AnchorPoint = Vector2.new(1, 0),
+        BackgroundColor3 = Theme.Surface,
+        BorderSizePixel = 0,
+        Position = UDim2.new(1, 0, 0, 0),
+        Size = UDim2.new(0, 10, 1, 0),
+        Parent = sidebar,
+        ZIndex = 4,
+    })
 
     create("Frame", {
         AnchorPoint = Vector2.new(1, 0),
@@ -2716,6 +2751,27 @@ function VoltzUI:CreateWindow(options)
         Position = UDim2.fromOffset(176, 0),
         Size = UDim2.new(1, -176, 1, 0),
         Parent = body,
+        ZIndex = 3,
+    })
+    corner(content, 10)
+
+    -- Keep only the outer bottom-right corner rounded. Top and left are
+    -- internal joins with the topbar/sidebar.
+    create("Frame", {
+        BackgroundColor3 = Theme.Background,
+        BorderSizePixel = 0,
+        Position = UDim2.fromOffset(0, 0),
+        Size = UDim2.new(1, 0, 0, 10),
+        Parent = content,
+        ZIndex = 3,
+    })
+
+    create("Frame", {
+        BackgroundColor3 = Theme.Background,
+        BorderSizePixel = 0,
+        Position = UDim2.fromOffset(0, 0),
+        Size = UDim2.new(0, 10, 1, 0),
+        Parent = content,
         ZIndex = 3,
     })
 
