@@ -1,4 +1,4 @@
--- BUILD: VOLTZUI-1.2.7-THAI-FONT-20260707
+-- BUILD: VOLTZUI-1.2.8-THAI-TYPOGRAPHY-20260707
 --[[
     VoltzUI - Clean Roblox UI Library
     BUILD: VOLTZUI-1.2.7-THAI-FONT-20260707
@@ -20,7 +20,7 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.2.7",
+    Version = "1.2.8",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -77,6 +77,7 @@ local FONT_WEIGHTS = {
 
 local ActiveFontFamily = "NotoSansThai"
 local ActiveFonts = {}
+local ActiveFontScale = 1.10
 
 local function tryFontFromName(family, weight)
     if type(family) ~= "string" or family == "" then
@@ -170,23 +171,50 @@ local function applyFontSpec(spec)
 
     ActiveFontFamily = resolvedFamily or family
     ActiveFonts = resolved
+
+    local explicitScale = type(spec) == "table" and tonumber(spec.Scale or spec.FontScale)
+    if explicitScale then
+        ActiveFontScale = math.clamp(explicitScale, 0.8, 1.5)
+    else
+        local requestedName = tostring(family or ActiveFontFamily):lower()
+        ActiveFontScale = requestedName:find("thai", 1, true) and 1.10 or 1.0
+    end
+
     VoltzUI.FontFamily = ActiveFontFamily
     VoltzUI.Fonts = ActiveFonts
+    VoltzUI.FontScale = ActiveFontScale
 end
 
 local function fontFace(role)
     return ActiveFonts[role] or ActiveFonts.Regular or fallbackFont(Enum.FontWeight.Regular)
 end
 
+local function fontSize(baseSize)
+    local numeric = tonumber(baseSize) or 12
+    return math.max(1, math.floor((numeric * ActiveFontScale) + 0.5))
+end
+
 applyFontSpec("NotoSansThai")
 
-function VoltzUI:SetFont(fontSpec)
+function VoltzUI:SetFont(fontSpec, scale)
+    if scale ~= nil and type(fontSpec) == "string" then
+        fontSpec = {
+            Family = fontSpec,
+            Scale = scale,
+        }
+    end
     applyFontSpec(fontSpec or "NotoSansThai")
     return self
 end
 
+function VoltzUI:SetFontScale(scale)
+    ActiveFontScale = math.clamp(tonumber(scale) or ActiveFontScale, 0.8, 1.5)
+    self.FontScale = ActiveFontScale
+    return self
+end
+
 function VoltzUI:GetFont()
-    return self.FontFamily, self.Fonts
+    return self.FontFamily, self.Fonts, self.FontScale
 end
 
 local function cloneTable(source)
@@ -952,7 +980,7 @@ local function createTextButton(properties)
         BackgroundColor3 = Theme.Surface2,
         FontFace = fontFace("Medium"),
         TextColor3 = Theme.Text,
-        TextSize = 13,
+        TextSize = fontSize(13),
     }, properties))
     return button
 end
@@ -968,7 +996,7 @@ local function createElementBase(section, options, height)
         Name = options.Title,
         BackgroundColor3 = Theme.Surface2,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, height or (options.Desc and 68 or 58)),
+        Size = UDim2.new(1, 0, 0, height or (options.Desc and 72 or 60)),
         ClipsDescendants = true,
         Parent = section.Container,
     })
@@ -984,12 +1012,12 @@ local function createElementBase(section, options, height)
 
     local title = create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.new(0, leftOffset, 0, options.Desc and 12 or 0),
-        Size = UDim2.new(1, -(leftOffset + 112), options.Desc and 0 or 1, options.Desc and 21 or 0),
+        Position = UDim2.new(0, leftOffset, 0, options.Desc and 11 or 0),
+        Size = UDim2.new(1, -(leftOffset + 112), options.Desc and 0 or 1, options.Desc and 24 or 0),
         FontFace = fontFace("Medium"),
         Text = options.Title,
         TextColor3 = Theme.Text,
-        TextSize = 14,
+        TextSize = fontSize(14),
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Center,
         Parent = frame,
@@ -1000,13 +1028,13 @@ local function createElementBase(section, options, height)
     if options.Desc then
         description = create("TextLabel", {
             BackgroundTransparency = 1,
-            Position = UDim2.new(0, leftOffset, 0, 36),
-            Size = UDim2.new(1, -(leftOffset + 112), 0, 18),
+            Position = UDim2.new(0, leftOffset, 0, 38),
+            Size = UDim2.new(1, -(leftOffset + 112), 0, 21),
             FontFace = fontFace("Regular"),
             Text = options.Desc,
             TextColor3 = Theme.TextMuted,
             TextTransparency = 0,
-            TextSize = 12,
+            TextSize = fontSize(12),
             TextTruncate = Enum.TextTruncate.AtEnd,
             TextXAlignment = Enum.TextXAlignment.Left,
             TextYAlignment = Enum.TextYAlignment.Center,
@@ -1169,7 +1197,7 @@ function SectionMethods:AddSlider(options)
         FontFace = fontFace("Medium"),
         Text = tostring(value) .. tostring(options.Suffix),
         TextColor3 = Theme.Accent,
-        TextSize = 12,
+        TextSize = fontSize(12),
         TextXAlignment = Enum.TextXAlignment.Right,
         Parent = base.Frame,
         ZIndex = 4,
@@ -1318,7 +1346,7 @@ function SectionMethods:AddDropdown(options)
         Text = "Select...",
         TextColor3 = Theme.TextMuted,
         TextTransparency = 0.08,
-        TextSize = 12,
+        TextSize = fontSize(12),
         TextTruncate = Enum.TextTruncate.AtEnd,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = selector,
@@ -1421,7 +1449,7 @@ function SectionMethods:AddDropdown(options)
                 FontFace = fontFace("Regular"),
                 Text = tostring(valueName),
                 TextColor3 = Theme.Text,
-                TextSize = 11,
+                TextSize = fontSize(11),
                 TextXAlignment = Enum.TextXAlignment.Left,
                 Parent = optionButton,
                 ZIndex = 8,
@@ -1538,7 +1566,7 @@ function SectionMethods:AddInput(options)
         Size = UDim2.fromOffset(176, 34),
         Text = tostring(options.Default or ""),
         TextColor3 = Theme.Text,
-        TextSize = 12,
+        TextSize = fontSize(12),
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = base.Frame,
         ZIndex = 4,
@@ -1669,7 +1697,7 @@ function SectionMethods:AddParagraph(options)
     local frame = create("Frame", {
         BackgroundColor3 = Theme.Surface2,
         BorderSizePixel = 0,
-        Size = UDim2.new(1, 0, 0, 80),
+        Size = UDim2.new(1, 0, 0, 86),
         AutomaticSize = Enum.AutomaticSize.Y,
         Parent = self.Container,
     })
@@ -1682,11 +1710,11 @@ function SectionMethods:AddParagraph(options)
     local title = create("TextLabel", {
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(30, 0),
-        Size = UDim2.new(1, -30, 0, 22),
+        Size = UDim2.new(1, -30, 0, 25),
         FontFace = fontFace("Medium"),
         Text = options.Title,
         TextColor3 = Theme.Text,
-        TextSize = 14,
+        TextSize = fontSize(14),
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = frame,
         ZIndex = 3,
@@ -1694,14 +1722,14 @@ function SectionMethods:AddParagraph(options)
 
     local content = create("TextLabel", {
         BackgroundTransparency = 1,
-        Position = UDim2.fromOffset(30, 30),
+        Position = UDim2.fromOffset(30, 33),
         Size = UDim2.new(1, -30, 0, 0),
         AutomaticSize = Enum.AutomaticSize.Y,
         FontFace = fontFace("Regular"),
         Text = options.Content,
         TextColor3 = Theme.TextMuted,
         TextTransparency = 0,
-        TextSize = 12,
+        TextSize = fontSize(12),
         TextWrapped = true,
         TextXAlignment = Enum.TextXAlignment.Left,
         TextYAlignment = Enum.TextYAlignment.Top,
@@ -1757,7 +1785,7 @@ function SectionMethods:AddDivider(text)
             FontFace = fontFace("Regular"),
             Text = "  " .. tostring(text) .. "  ",
             TextColor3 = Theme.TextDim,
-            TextSize = 11,
+            TextSize = fontSize(11),
             Parent = frame,
             ZIndex = 2,
         })
@@ -1790,15 +1818,15 @@ function TabMethods:AddSection(options)
         Parent = self.Page,
     })
 
-    local headerHeight = options.Desc and 49 or 35
+    local headerHeight = options.Desc and 54 or 38
     local title = create("TextLabel", {
         BackgroundTransparency = 1,
         Position = UDim2.fromOffset(2, 0),
-        Size = UDim2.new(1, -4, 0, 22),
+        Size = UDim2.new(1, -4, 0, 25),
         FontFace = fontFace("SemiBold"),
         Text = options.Title,
         TextColor3 = Theme.Text,
-        TextSize = 14,
+        TextSize = fontSize(14),
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = sectionFrame,
     })
@@ -1806,13 +1834,13 @@ function TabMethods:AddSection(options)
     if options.Desc then
         create("TextLabel", {
             BackgroundTransparency = 1,
-            Position = UDim2.fromOffset(2, 22),
-            Size = UDim2.new(1, -4, 0, 18),
+            Position = UDim2.fromOffset(2, 26),
+            Size = UDim2.new(1, -4, 0, 21),
             FontFace = fontFace("Regular"),
             Text = options.Desc,
             TextColor3 = Theme.TextMuted,
             TextTransparency = 0,
-            TextSize = 11,
+            TextSize = fontSize(11),
             TextXAlignment = Enum.TextXAlignment.Left,
             Parent = sectionFrame,
         })
@@ -2251,7 +2279,7 @@ function WindowMethods:AddTab(options)
         FontFace = fontFace("Medium"),
         Text = options.Title,
         TextColor3 = Theme.TextMuted,
-        TextSize = 12,
+        TextSize = fontSize(12),
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = button,
         ZIndex = 7,
@@ -2396,7 +2424,7 @@ function WindowMethods:Notify(options)
         FontFace = fontFace("SemiBold"),
         Text = options.Title,
         TextColor3 = Theme.Text,
-        TextSize = 15,
+        TextSize = fontSize(15),
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = card,
         ZIndex = 102,
@@ -2410,7 +2438,7 @@ function WindowMethods:Notify(options)
         FontFace = fontFace("Regular"),
         Text = options.Content,
         TextColor3 = Theme.TextMuted,
-        TextSize = 12,
+        TextSize = fontSize(12),
         TextWrapped = true,
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = card,
@@ -2629,6 +2657,9 @@ function VoltzUI:CreateWindow(options)
     }, options)
 
     self:SetFont(options.Font or "NotoSansThai")
+    if options.FontScale ~= nil then
+        self:SetFontScale(options.FontScale)
+    end
 
     local config = normalizeConfigOptions(options.Config)
     local loadedConfig = nil
@@ -2779,7 +2810,7 @@ function VoltzUI:CreateWindow(options)
         FontFace = fontFace("SemiBold"),
         Text = options.Title,
         TextColor3 = Theme.Text,
-        TextSize = 16,
+        TextSize = fontSize(16),
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = topbar,
         ZIndex = 7,
@@ -2792,7 +2823,7 @@ function VoltzUI:CreateWindow(options)
         FontFace = fontFace("Regular"),
         Text = options.Subtitle,
         TextColor3 = Theme.TextDim,
-        TextSize = 10,
+        TextSize = fontSize(10),
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = topbar,
         ZIndex = 7,
@@ -2886,7 +2917,7 @@ function VoltzUI:CreateWindow(options)
         FontFace = fontFace("Medium"),
         Text = "NAVIGATION",
         TextColor3 = Theme.TextDim,
-        TextSize = 10,
+        TextSize = fontSize(10),
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = sidebar,
         ZIndex = 5,
@@ -2947,7 +2978,7 @@ function VoltzUI:CreateWindow(options)
         FontFace = fontFace("SemiBold"),
         Text = "Tab",
         TextColor3 = Theme.Text,
-        TextSize = 15,
+        TextSize = fontSize(15),
         TextXAlignment = Enum.TextXAlignment.Left,
         Parent = content,
         ZIndex = 4,
@@ -2960,7 +2991,7 @@ function VoltzUI:CreateWindow(options)
         FontFace = fontFace("Regular"),
         Text = "",
         TextColor3 = Theme.TextDim,
-        TextSize = 11,
+        TextSize = fontSize(11),
         TextXAlignment = Enum.TextXAlignment.Left,
         Visible = false,
         Parent = content,
@@ -3100,5 +3131,6 @@ SectionMethods.Divider = SectionMethods.AddDivider
 VoltzUI.Theme = Theme
 VoltzUI.LoadIcons = loadExternalIcons
 VoltzUI.SetFontFamily = VoltzUI.SetFont
+VoltzUI.SetTypographyScale = VoltzUI.SetFontScale
 
 return VoltzUI
