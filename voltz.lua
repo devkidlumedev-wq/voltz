@@ -1,15 +1,3 @@
--- BUILD: VOLTZUI-2.0.0-EMBEDDED-MOBILE-GUARD-20260708
---[[
-    VoltzUI - Clean Roblox UI Library
-    BUILD: VOLTZUI-2.0.0-EMBEDDED-MOBILE-GUARD-20260708
-    Theme: clean dark + selectable accent presets
-    External icons: https://github.com/Footagesus/Icons
-
-    Designed for client-side Roblox/Luau environments that support HttpGet + loadstring.
-    Includes persistent flags/config support through executor file APIs.
-    In Studio, you can inject your own compatible icon provider with VoltzUI:SetIconProvider(provider).
-]]
-
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
