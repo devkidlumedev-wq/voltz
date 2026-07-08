@@ -10,7 +10,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
     Version = "2.0.0",
-    Build = "VOLTZUI-2.0.0-PRO-SUITE-20260708",
+    Build = "VOLTZUI-2.0.0-MOBILE-DRAG-FIX-20260708",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -1892,50 +1892,95 @@ local function createIcon(parent, iconName, size, color, zIndex)
     return iconObject
 end
 
-local function dragify(handle, target, changedCallback, endedCallback)
+local function dragify(handle, target, changedCallback, endedCallback, dragOptions)
+    dragOptions = type(dragOptions) == "table" and dragOptions or {}
+
+    local allowMouse = dragOptions.AllowMouse ~= false
+    local allowTouch = dragOptions.AllowTouch ~= false
+    local mouseThreshold = math.max(tonumber(dragOptions.MouseThreshold) or 0, 0)
+    local touchThreshold = math.max(tonumber(dragOptions.TouchThreshold) or 10, 0)
+
+    local pressed = false
     local dragging = false
     local dragInput
     local dragStart
     local startPosition
+    local activeType
+
+    local function inputAllowed(input)
+        if input.UserInputType == Enum.UserInputType.MouseButton1 then
+            return allowMouse
+        end
+        if input.UserInputType == Enum.UserInputType.Touch then
+            return allowTouch
+        end
+        return false
+    end
+
+    local function finishDrag()
+        local didDrag = dragging
+        pressed = false
+        dragging = false
+        dragInput = nil
+        activeType = nil
+
+        if didDrag and type(endedCallback) == "function" then
+            endedCallback(target.Position)
+        end
+    end
 
     handle.InputBegan:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseButton1
-            or input.UserInputType == Enum.UserInputType.Touch then
-            dragging = true
-            dragStart = input.Position
-            startPosition = target.Position
-
-            input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End then
-                    local wasDragging = dragging
-                    dragging = false
-                    if wasDragging and type(endedCallback) == "function" then
-                        endedCallback(target.Position)
-                    end
-                end
-            end)
+        if not inputAllowed(input) then
+            return
         end
+
+        pressed = true
+        dragging = false
+        dragInput = input.UserInputType == Enum.UserInputType.Touch and input or dragInput
+        dragStart = input.Position
+        startPosition = target.Position
+        activeType = input.UserInputType
+
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then
+                finishDrag()
+            end
+        end)
     end)
 
     handle.InputChanged:Connect(function(input)
-        if input.UserInputType == Enum.UserInputType.MouseMovement
-            or input.UserInputType == Enum.UserInputType.Touch then
+        if activeType == Enum.UserInputType.MouseButton1
+            and input.UserInputType == Enum.UserInputType.MouseMovement then
+            dragInput = input
+        elseif activeType == Enum.UserInputType.Touch
+            and input.UserInputType == Enum.UserInputType.Touch then
             dragInput = input
         end
     end)
 
     UserInputService.InputChanged:Connect(function(input)
-        if input == dragInput and dragging then
-            local delta = input.Position - dragStart
-            target.Position = UDim2.new(
-                startPosition.X.Scale,
-                startPosition.X.Offset + delta.X,
-                startPosition.Y.Scale,
-                startPosition.Y.Offset + delta.Y
-            )
-            if type(changedCallback) == "function" then
-                changedCallback(target.Position)
+        if not pressed or input ~= dragInput or not dragStart or not startPosition then
+            return
+        end
+
+        local delta = input.Position - dragStart
+        if not dragging then
+            local threshold = activeType == Enum.UserInputType.Touch and touchThreshold or mouseThreshold
+            if delta.Magnitude < threshold then
+                return
             end
+            dragging = true
+        end
+
+        target.Position = UDim2.new(
+            startPosition.X.Scale,
+            startPosition.X.Offset + delta.X,
+            startPosition.Y.Scale,
+            startPosition.Y.Offset + delta.Y
+        )
+
+        if type(changedCallback) == "function" then
+            changedCallback(target.Position)
         end
     end)
 end
@@ -3320,7 +3365,7 @@ function WindowMethods:SaveConfig(configName)
     end
 
     local windowData = {}
-    if self.Config.SaveWindowPosition then
+    if self.Config.SaveWindowPosition and not self.MobileMode then
         windowData.Position = serializeValue(self.Main.Position)
     end
     if self.Config.SaveSelectedTab and self.SelectedTab then
@@ -3374,7 +3419,7 @@ function WindowMethods:LoadConfig(configName)
     end
 
     local windowData = type(data.Window) == "table" and data.Window or {}
-    if self.Config.SaveWindowPosition and windowData.Position then
+    if self.Config.SaveWindowPosition and not self.MobileMode and windowData.Position then
         local position = deserializeValue(windowData.Position)
         if typeof(position) == "UDim2" then
             self.Main.Position = position
@@ -4270,6 +4315,9 @@ function VoltzUI:CreateWindow(options)
         MobileButton = true,
         MobileResponsive = true,
         MobileTouchScroll = true,
+        -- Touch dragging is disabled by default so a swipe used for scrolling
+        -- cannot move the entire window on phones/tablets.
+        MobileDraggable = false,
         MobileMargin = 12,
         MobileSidebarWidth = 150,
         MobileScrollBottomPadding = 28,
@@ -4286,6 +4334,7 @@ function VoltzUI:CreateWindow(options)
 
     local mobileMode = options.MobileResponsive ~= false and UserInputService.TouchEnabled
     local mobileTouchScroll = options.MobileTouchScroll ~= false and UserInputService.TouchEnabled
+    local mobileDraggable = options.MobileDraggable == true
 
     self:SetFont(options.Font or "NotoSansThai")
     if options.FontScale ~= nil then
@@ -4760,6 +4809,7 @@ function VoltzUI:CreateWindow(options)
         MobileButton = nil,
         MobileMode = mobileMode,
         MobileTouchScroll = mobileTouchScroll,
+        MobileDraggable = mobileDraggable,
         MobileScrollBottomPadding = math.max(tonumber(options.MobileScrollBottomPadding) or 28, 0),
         UIScale = uiScale,
         Config = config,
@@ -4793,8 +4843,17 @@ function VoltzUI:CreateWindow(options)
             position.Y.Offset + 8
         )
     end, function()
-        window:_QueueAutoSave()
-    end)
+        -- Desktop window positions may be persisted. Mobile positions are
+        -- intentionally ignored to avoid saving an accidental touch drag.
+        if not window.MobileMode then
+            window:_QueueAutoSave()
+        end
+    end, {
+        AllowMouse = true,
+        AllowTouch = mobileDraggable,
+        MouseThreshold = 0,
+        TouchThreshold = 12,
+    })
 
     window.InputConnection = UserInputService.InputBegan:Connect(function(input, gameProcessed)
         if not gameProcessed and input.KeyCode == window.ToggleKey then
@@ -4826,7 +4885,12 @@ function VoltzUI:CreateWindow(options)
         mobileButton.MouseButton1Click:Connect(function()
             window:SetVisible(true)
         end)
-        dragify(mobileButton, mobileButton)
+        dragify(mobileButton, mobileButton, nil, nil, {
+            AllowMouse = true,
+            AllowTouch = true,
+            MouseThreshold = 2,
+            TouchThreshold = 10,
+        })
         window.MobileButton = mobileButton
     end
 
