@@ -9,8 +9,8 @@ local HttpService = game:GetService("HttpService")
 local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
-    Version = "1.4.5",
-    Build = "VOLTZUI-1.4.5-MOBILE-TOUCH-SCROLL-20260708",
+    Version = "2.0.0",
+    Build = "VOLTZUI-2.0.0-PRO-SUITE-20260708",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -1343,17 +1343,17 @@ local function bindVerticalCanvas(scrollingFrame, listLayout, extraBottom, touch
     local trackedObjects = setmetatable({}, { __mode = "k" })
     local trackedConnections = setmetatable({}, { __mode = "k" })
 
-    local function readPaddingHeight()
+    local function readPaddingHeight(scale)
         local total = 0
-        local absoluteHeight = scrollingFrame.AbsoluteSize.Y
+        local logicalHeight = scrollingFrame.AbsoluteSize.Y / math.max(scale, 0.01)
 
         for _, child in ipairs(scrollingFrame:GetChildren()) do
             if child:IsA("UIPadding") then
                 total = total
                     + child.PaddingTop.Offset
                     + child.PaddingBottom.Offset
-                    + (child.PaddingTop.Scale * absoluteHeight)
-                    + (child.PaddingBottom.Scale * absoluteHeight)
+                    + (child.PaddingTop.Scale * logicalHeight)
+                    + (child.PaddingBottom.Scale * logicalHeight)
             end
         end
 
@@ -1361,8 +1361,13 @@ local function bindVerticalCanvas(scrollingFrame, listLayout, extraBottom, touch
     end
 
     local function calculateContentHeight()
-        local layoutHeight = math.ceil(listLayout.AbsoluteContentSize.Y)
-        local paddingHeight = math.ceil(readPaddingHeight())
+        -- AbsoluteContentSize is reported in rendered pixels. CanvasPosition and
+        -- CanvasSize offsets use the ScrollingFrame's logical, pre-UIScale units.
+        -- On mobile the window is usually scaled down, so using the rendered size
+        -- directly makes the canvas too short and prevents reaching the last item.
+        local scale = effectiveGuiScale(scrollingFrame)
+        local layoutHeight = math.ceil(listLayout.AbsoluteContentSize.Y / scale)
+        local paddingHeight = math.ceil(readPaddingHeight(scale))
         return math.max(0, layoutHeight + paddingHeight + extraBottom)
     end
 
@@ -1374,15 +1379,9 @@ local function bindVerticalCanvas(scrollingFrame, listLayout, extraBottom, touch
         local contentHeight = calculateContentHeight()
         scrollingFrame.CanvasSize = UDim2.new(0, 0, 0, contentHeight)
 
-        local viewportHeight = scrollingFrame.AbsoluteSize.Y
-        local ok, absoluteWindowSize = pcall(function()
-            return scrollingFrame.AbsoluteWindowSize
-        end)
-        if ok and absoluteWindowSize and absoluteWindowSize.Y > 0 then
-            viewportHeight = absoluteWindowSize.Y
-        end
-
-        local maxCanvasY = math.max(0, contentHeight - viewportHeight)
+        -- Use the same scale-aware calculation as the touch-scroll clamp so the
+        -- visible bottom and the draggable bottom always match.
+        local maxCanvasY = maxCanvasPositionY(scrollingFrame)
         local current = scrollingFrame.CanvasPosition
         local clampedY = math.clamp(current.Y, 0, maxCanvasY)
 
@@ -3125,7 +3124,7 @@ end
 
 
 function WindowMethods:_BuildFlag(section, options)
-    local requested = options.Flag
+    local requested = options.Flag or options.Id
     local base = requested or table.concat({
         tostring(section.Tab.Title or "Tab"),
         tostring(section.Title or "Section"),
@@ -3559,7 +3558,12 @@ function WindowMethods:AddTab(options)
         SortOrder = Enum.SortOrder.LayoutOrder,
         Parent = page,
     })
-    local refreshPageCanvas = bindVerticalCanvas(page, pageLayout, 0, self.MobileTouchScroll)
+    local refreshPageCanvas = bindVerticalCanvas(
+        page,
+        pageLayout,
+        self.MobileMode and (self.MobileScrollBottomPadding or 28) or 8,
+        self.MobileTouchScroll
+    )
 
     local tab = setmetatable({
         Window = self,
@@ -4210,11 +4214,18 @@ function WindowMethods:AddConfigSection(tab, options)
         ButtonTextKey = "DeleteButton",
         Callback = function()
             local selected = configListDropdown and configListDropdown:Get() or currentTypedName()
-            local success, message = self:DeleteConfig(selected)
-            if success then
-                refreshConfigDropdown(currentTypedName())
-            end
-            showResult("ConfigDeleted", "Config deleted", success, message)
+            self:Confirm({
+                Title = self:T("DeleteConfigTitle", "Delete config"),
+                Content = "Delete config '" .. tostring(selected) .. "'?",
+                ConfirmText = self:T("DeleteButton", "Delete"),
+                Danger = true,
+                Callback = function(confirmed)
+                    if not confirmed then return end
+                    local success, message = self:DeleteConfig(selected)
+                    if success then refreshConfigDropdown(currentTypedName()) end
+                    showResult("ConfigDeleted", "Config deleted", success, message)
+                end,
+            })
         end,
     })
 
@@ -4227,8 +4238,17 @@ function WindowMethods:AddConfigSection(tab, options)
         ButtonText = self:T("ResetButton", "Reset"),
         ButtonTextKey = "ResetButton",
         Callback = function()
-            local success, message = self:ResetConfig(false)
-            showResult("DefaultsRestored", "Defaults restored", success, message)
+            self:Confirm({
+                Title = self:T("ResetDefaultsTitle", "Reset defaults"),
+                Content = self:T("ConfirmQuestion", "Are you sure you want to continue?"),
+                ConfirmText = self:T("ResetButton", "Reset"),
+                Danger = true,
+                Callback = function(confirmed)
+                    if not confirmed then return end
+                    local success, message = self:ResetConfig(false)
+                    showResult("DefaultsRestored", "Defaults restored", success, message)
+                end,
+            })
         end,
     })
 
@@ -4252,6 +4272,7 @@ function VoltzUI:CreateWindow(options)
         MobileTouchScroll = true,
         MobileMargin = 12,
         MobileSidebarWidth = 150,
+        MobileScrollBottomPadding = 28,
         Acrylic = false,
         Font = "NotoSansThai",
         Language = VoltzUI.DefaultLanguage or "English",
@@ -4739,6 +4760,7 @@ function VoltzUI:CreateWindow(options)
         MobileButton = nil,
         MobileMode = mobileMode,
         MobileTouchScroll = mobileTouchScroll,
+        MobileScrollBottomPadding = math.max(tonumber(options.MobileScrollBottomPadding) or 28, 0),
         UIScale = uiScale,
         Config = config,
         LoadedConfig = loadedConfig,
@@ -4818,6 +4840,2084 @@ function VoltzUI:CreateWindow(options)
     return window
 end
 
+
+-- ============================================================================
+-- VoltzUI 2.0 Pro Suite
+-- Search, mobile drawer, color picker/theme editor, dialogs, lists, status,
+-- tooltips, notification queue, advanced configs, dependencies and plugins.
+-- ============================================================================
+
+local V2_LOCALE_EXTRA = {
+    English = {
+        SearchControls = "Search controls...", ConfirmAction = "Confirm action", ConfirmQuestion = "Are you sure you want to continue?", ConfirmButton = "Confirm", CancelButton = "Cancel",
+        ThemeEditorTitle = "Theme editor", ThemeEditorDesc = "Choose a preset or create your own colors", ThemePresetTitle = "Theme preset", ThemePresetDesc = "Start from a built-in color preset",
+        ThemeTransferTitle = "Theme import / export", ThemeTransferDesc = "Copy or paste a VoltzUI theme JSON string", ExportTheme = "Export theme", ImportTheme = "Import theme",
+        AdvancedConfigTitle = "Advanced config tools", AdvancedConfigDesc = "Rename, duplicate, export and import config profiles", TargetConfigName = "Target config name", TargetConfigDesc = "Used by rename, duplicate and import",
+        ConfigTransferTitle = "Config import / export", ConfigTransferDesc = "Copy or paste a VoltzUI config JSON string", DuplicateConfig = "Duplicate current config", RenameConfig = "Rename current config", ExportConfig = "Export current config", ImportConfig = "Import as target config",
+        SearchList = "Search list...", NoItems = "No items", SortOff = "Sort: Off",
+    },
+    ["ไทย"] = {
+        SearchControls = "ค้นหาเมนู...", ConfirmAction = "ยืนยันการทำรายการ", ConfirmQuestion = "คุณแน่ใจหรือไม่ว่าต้องการดำเนินการต่อ?", ConfirmButton = "ยืนยัน", CancelButton = "ยกเลิก",
+        ThemeEditorTitle = "ปรับแต่งธีม", ThemeEditorDesc = "เลือกธีมสำเร็จรูปหรือสร้างสีของคุณเอง", ThemePresetTitle = "ธีมสำเร็จรูป", ThemePresetDesc = "เลือกชุดสีเริ่มต้น",
+        ThemeTransferTitle = "นำเข้า / ส่งออกธีม", ThemeTransferDesc = "คัดลอกหรือวางข้อความ JSON ของธีม VoltzUI", ExportTheme = "ส่งออกธีม", ImportTheme = "นำเข้าธีม",
+        AdvancedConfigTitle = "เครื่องมือคอนฟิกขั้นสูง", AdvancedConfigDesc = "เปลี่ยนชื่อ ทำสำเนา นำเข้า และส่งออกคอนฟิก", TargetConfigName = "ชื่อคอนฟิกปลายทาง", TargetConfigDesc = "ใช้สำหรับเปลี่ยนชื่อ ทำสำเนา และนำเข้า",
+        ConfigTransferTitle = "นำเข้า / ส่งออกคอนฟิก", ConfigTransferDesc = "คัดลอกหรือวางข้อความ JSON ของคอนฟิก VoltzUI", DuplicateConfig = "ทำสำเนาคอนฟิกปัจจุบัน", RenameConfig = "เปลี่ยนชื่อคอนฟิกปัจจุบัน", ExportConfig = "ส่งออกคอนฟิกปัจจุบัน", ImportConfig = "นำเข้าเป็นคอนฟิกปลายทาง",
+        SearchList = "ค้นหาในรายการ...", NoItems = "ไม่มีข้อมูล", SortOff = "เรียง: ปิด",
+    },
+    ["日本語"] = { SearchControls = "コントロールを検索...", ConfirmAction = "操作を確認", ConfirmQuestion = "続行してもよろしいですか？", ConfirmButton = "確認", CancelButton = "キャンセル", SearchList = "リストを検索...", NoItems = "項目がありません" },
+    ["简体中文"] = { SearchControls = "搜索控件...", ConfirmAction = "确认操作", ConfirmQuestion = "确定要继续吗？", ConfirmButton = "确认", CancelButton = "取消", SearchList = "搜索列表...", NoItems = "没有项目" },
+    ["한국어"] = { SearchControls = "컨트롤 검색...", ConfirmAction = "작업 확인", ConfirmQuestion = "계속하시겠습니까?", ConfirmButton = "확인", CancelButton = "취소", SearchList = "목록 검색...", NoItems = "항목 없음" },
+    ["Español"] = { SearchControls = "Buscar controles...", ConfirmAction = "Confirmar acción", ConfirmQuestion = "¿Seguro que quieres continuar?", ConfirmButton = "Confirmar", CancelButton = "Cancelar", SearchList = "Buscar en la lista...", NoItems = "Sin elementos" },
+    ["Português"] = { SearchControls = "Pesquisar controles...", ConfirmAction = "Confirmar ação", ConfirmQuestion = "Tem certeza de que deseja continuar?", ConfirmButton = "Confirmar", CancelButton = "Cancelar", SearchList = "Pesquisar lista...", NoItems = "Sem itens" },
+    ["Tiếng Việt"] = { SearchControls = "Tìm điều khiển...", ConfirmAction = "Xác nhận thao tác", ConfirmQuestion = "Bạn có chắc muốn tiếp tục?", ConfirmButton = "Xác nhận", CancelButton = "Hủy", SearchList = "Tìm trong danh sách...", NoItems = "Không có mục" },
+}
+for languageName, dictionary in pairs(V2_LOCALE_EXTRA) do
+    LanguageDefinitions[languageName] = LanguageDefinitions[languageName] or {}
+    for key, value in pairs(dictionary) do
+        LanguageDefinitions[languageName][key] = value
+    end
+end
+
+local function v2NormalizeText(value)
+    return tostring(value or ""):lower():gsub("%s+", " ")
+end
+
+local function v2FindNewestFrame(section, title)
+    if not section or not section.Container then
+        return nil
+    end
+    local children = section.Container:GetChildren()
+    for index = #children, 1, -1 do
+        local child = children[index]
+        if child:IsA("GuiObject") and (title == nil or child.Name == tostring(title)) then
+            return child
+        end
+    end
+    return nil
+end
+
+local function v2ColorToHex(color)
+    if typeof(color) ~= "Color3" then
+        return "#FFFFFF"
+    end
+    return string.format(
+        "#%02X%02X%02X",
+        math.clamp(math.floor(color.R * 255 + 0.5), 0, 255),
+        math.clamp(math.floor(color.G * 255 + 0.5), 0, 255),
+        math.clamp(math.floor(color.B * 255 + 0.5), 0, 255)
+    )
+end
+
+local function v2HexToColor(value, fallback)
+    if typeof(value) == "Color3" then
+        return value
+    end
+    if type(value) == "table" then
+        local r = tonumber(value.R or value.r or value[1])
+        local g = tonumber(value.G or value.g or value[2])
+        local b = tonumber(value.B or value.b or value[3])
+        if r and g and b then
+            if r > 1 or g > 1 or b > 1 then
+                return Color3.fromRGB(
+                    math.clamp(math.floor(r + 0.5), 0, 255),
+                    math.clamp(math.floor(g + 0.5), 0, 255),
+                    math.clamp(math.floor(b + 0.5), 0, 255)
+                )
+            end
+            return Color3.new(math.clamp(r, 0, 1), math.clamp(g, 0, 1), math.clamp(b, 0, 1))
+        end
+    end
+
+    local text = tostring(value or ""):gsub("#", ""):gsub("0x", "")
+    if #text == 3 then
+        text = text:sub(1, 1) .. text:sub(1, 1)
+            .. text:sub(2, 2) .. text:sub(2, 2)
+            .. text:sub(3, 3) .. text:sub(3, 3)
+    end
+    if #text ~= 6 or not text:match("^[%da-fA-F]+$") then
+        return fallback or Color3.new(1, 1, 1)
+    end
+    return Color3.fromRGB(
+        tonumber(text:sub(1, 2), 16),
+        tonumber(text:sub(3, 4), 16),
+        tonumber(text:sub(5, 6), 16)
+    )
+end
+
+local function v2SerializeThemePalette(palette)
+    local result = {}
+    for _, key in ipairs(THEME_COLOR_KEYS) do
+        if typeof(palette[key]) == "Color3" then
+            result[key] = v2ColorToHex(palette[key])
+        end
+    end
+    return result
+end
+
+local function v2DeserializeThemePalette(data)
+    local result = {}
+    if type(data) ~= "table" then
+        return result
+    end
+    for _, key in ipairs(THEME_COLOR_KEYS) do
+        if data[key] ~= nil then
+            result[key] = v2HexToColor(data[key], Theme[key])
+        end
+    end
+    return result
+end
+
+function WindowMethods:_TrackConnection(connection)
+    if connection then
+        self._Connections = self._Connections or {}
+        table.insert(self._Connections, connection)
+    end
+    return connection
+end
+
+function WindowMethods:_AddCleanup(callback)
+    if type(callback) == "function" then
+        self._CleanupCallbacks = self._CleanupCallbacks or {}
+        table.insert(self._CleanupCallbacks, callback)
+    end
+    return callback
+end
+
+function WindowMethods:_RegisterSearchEntry(tab, section, frame, options)
+    if not tab or not frame then
+        return nil
+    end
+    self._SearchEntries = self._SearchEntries or {}
+    section._SearchEntries = section._SearchEntries or {}
+
+    local entry = {
+        Tab = tab,
+        Section = section,
+        Frame = frame,
+        Text = v2NormalizeText(table.concat({
+            tostring(options and options.Title or ""),
+            tostring(options and options.Desc or ""),
+            tostring(options and options.Keywords or ""),
+            tostring(options and options.Flag or ""),
+        }, " ")),
+    }
+    table.insert(self._SearchEntries, entry)
+    table.insert(section._SearchEntries, entry)
+    if self.SearchEnabled and self.SearchQuery and self.SearchQuery ~= "" then
+        task.defer(function() self:ApplySearch(self.SearchQuery, tab) end)
+    end
+    return entry
+end
+
+function WindowMethods:ApplySearch(query, targetTab)
+    local normalized = v2NormalizeText(query)
+    self.SearchQuery = tostring(query or "")
+    local tab = targetTab or self.SelectedTab
+    if not tab then
+        return
+    end
+
+    for _, section in ipairs(tab.Sections or {}) do
+        local sectionText = v2NormalizeText((section.Title or "") .. " " .. (section.Description or ""))
+        local sectionMatches = normalized == "" or sectionText:find(normalized, 1, true) ~= nil
+        local visibleCount = 0
+
+        for _, entry in ipairs(section._SearchEntries or {}) do
+            if entry.Frame and entry.Frame.Parent then
+                local visible = normalized == ""
+                    or sectionMatches
+                    or entry.Text:find(normalized, 1, true) ~= nil
+                entry.Frame.Visible = visible
+                if visible then
+                    visibleCount = visibleCount + 1
+                end
+            end
+        end
+
+        if section.Frame and section.Frame.Parent then
+            section.Frame.Visible = normalized == "" or sectionMatches or visibleCount > 0
+        end
+    end
+
+    task.defer(function()
+        if tab.RefreshScroll then
+            tab:RefreshScroll()
+        end
+    end)
+end
+
+function WindowMethods:SetSearchQuery(query)
+    if self.SearchBox then
+        self.SearchBox.Text = tostring(query or "")
+    else
+        self:ApplySearch(query)
+    end
+end
+
+function WindowMethods:SetSearchEnabled(value)
+    local enabled = value == true
+    self.SearchEnabled = enabled
+    if self.SearchFrame then
+        self.SearchFrame.Visible = enabled
+    end
+    if self.PageContainer then
+        if enabled then
+            self.PageContainer.Position = UDim2.fromOffset(22, 110)
+            self.PageContainer.Size = UDim2.new(1, -44, 1, -110)
+        else
+            self.PageContainer.Position = UDim2.fromOffset(22, 66)
+            self.PageContainer.Size = UDim2.new(1, -44, 1, -66)
+        end
+    end
+    self:RefreshScrolling()
+end
+
+function WindowMethods:_AttachTooltip(guiObject, text)
+    if not guiObject or text == nil then
+        return nil
+    end
+    self._TooltipBindings = self._TooltipBindings or setmetatable({}, { __mode = "k" })
+    local tooltipText = tostring(text)
+    self._TooltipBindings[guiObject] = tooltipText
+
+    local touchToken = 0
+    self:_TrackConnection(guiObject.MouseEnter:Connect(function()
+        if UserInputService.TouchEnabled and not UserInputService.MouseEnabled then
+            return
+        end
+        self:ShowTooltip(tooltipText)
+    end))
+    self:_TrackConnection(guiObject.MouseLeave:Connect(function()
+        self:HideTooltip()
+    end))
+    self:_TrackConnection(guiObject.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+        touchToken = touchToken + 1
+        local token = touchToken
+        task.delay(0.55, function()
+            if token == touchToken and guiObject.Parent then
+                self:ShowTooltip(tooltipText, input.Position)
+            end
+        end)
+    end))
+    self:_TrackConnection(guiObject.InputEnded:Connect(function(input)
+        if input.UserInputType == Enum.UserInputType.Touch then
+            touchToken = touchToken + 1
+            self:HideTooltip()
+        end
+    end))
+    return guiObject
+end
+
+function WindowMethods:ShowTooltip(text, position)
+    if not self.TooltipFrame or not self.TooltipLabel then
+        return
+    end
+    self.TooltipLabel.Text = tostring(text or "")
+    self.TooltipFrame.Visible = true
+    self.TooltipFrame.GroupTransparency = 1
+
+    local mouse = position or UserInputService:GetMouseLocation()
+    local viewport = workspace.CurrentCamera and workspace.CurrentCamera.ViewportSize or Vector2.new(1280, 720)
+    task.defer(function()
+        if not self.TooltipFrame or not self.TooltipFrame.Parent then
+            return
+        end
+        local size = self.TooltipFrame.AbsoluteSize
+        local x = math.clamp(mouse.X + 14, 8, math.max(8, viewport.X - size.X - 8))
+        local y = math.clamp(mouse.Y + 14, 8, math.max(8, viewport.Y - size.Y - 8))
+        self.TooltipFrame.Position = UDim2.fromOffset(x, y)
+        tween(self.TooltipFrame, 0.12, { GroupTransparency = 0 })
+    end)
+end
+
+function WindowMethods:HideTooltip()
+    if not self.TooltipFrame or not self.TooltipFrame.Visible then
+        return
+    end
+    local frame = self.TooltipFrame
+    tween(frame, 0.1, { GroupTransparency = 1 })
+    task.delay(0.11, function()
+        if frame and frame.Parent and frame.GroupTransparency >= 0.95 then
+            frame.Visible = false
+        end
+    end)
+end
+
+local function v2DecorateController(window, controller, frame, options, section)
+    if not controller or controller._VoltzV2Decorated then
+        return controller
+    end
+    controller._VoltzV2Decorated = true
+    controller.Frame = controller.Frame or frame
+    controller.Options = controller.Options or options
+    controller.Window = window
+    controller.Section = section
+    controller._Enabled = true
+
+    local changedEvent = Instance.new("BindableEvent")
+    controller._ChangedEvent = changedEvent
+    controller.Changed = changedEvent.Event
+    window:_AddCleanup(function()
+        pcall(function()
+            changedEvent:Destroy()
+        end)
+    end)
+
+    if type(controller.Set) == "function" and type(controller.Get) == "function" then
+        local originalSet = controller.Set
+        function controller:Set(value, silent)
+            originalSet(self, value, silent)
+            if self._ChangedEvent then
+                self._ChangedEvent:Fire(self:Get())
+            end
+        end
+    end
+
+    function controller:SetEnabled(value)
+        self._Enabled = value ~= false
+        if not self.Frame or not self.Frame.Parent then
+            return self
+        end
+        if not self._DisableOverlay then
+            self._DisableOverlay = create("TextButton", {
+                Name = "VoltzDisableOverlay",
+                BackgroundColor3 = Theme.Background,
+                BackgroundTransparency = 0.72,
+                BorderSizePixel = 0,
+                AutoButtonColor = false,
+                Text = "",
+                Size = UDim2.fromScale(1, 1),
+                Visible = false,
+                Parent = self.Frame,
+                ZIndex = 80,
+            })
+            corner(self._DisableOverlay, 12)
+        end
+        self._DisableOverlay.Visible = not self._Enabled
+        return self
+    end
+
+    function controller:IsEnabled()
+        return self._Enabled ~= false
+    end
+
+    function controller:DependsOn(sourceController, expected)
+        local function refresh(value)
+            local enabled
+            if type(expected) == "function" then
+                local ok, result = pcall(expected, value)
+                enabled = ok and result == true
+            elseif expected == nil then
+                enabled = value == true
+            else
+                enabled = value == expected
+            end
+            self:SetEnabled(enabled)
+        end
+
+        if sourceController and type(sourceController.Get) == "function" then
+            refresh(sourceController:Get())
+        end
+        if sourceController and sourceController.Changed then
+            window:_TrackConnection(sourceController.Changed:Connect(refresh))
+        end
+        return self
+    end
+
+    function controller:SetTooltip(tooltipText)
+        if self.Frame then
+            window:_AttachTooltip(self.Frame, tooltipText)
+        end
+        return self
+    end
+
+    if options and options.Tooltip and frame then
+        window:_AttachTooltip(frame, options.Tooltip)
+    end
+    if section and frame then
+        window:_RegisterSearchEntry(section.Tab, section, frame, options or {})
+    end
+    return controller
+end
+
+local v2OriginalRegisterControl = WindowMethods._RegisterControl
+function WindowMethods:_RegisterControl(section, options, controller, defaultValue, controlType)
+    local result = v2OriginalRegisterControl(self, section, options, controller, defaultValue, controlType)
+    local frame = result.Frame or v2FindNewestFrame(section, options and options.Title)
+    return v2DecorateController(self, result, frame, options or {}, section)
+end
+
+local v2OriginalAddSection = TabMethods.AddSection
+function TabMethods:AddSection(options)
+    local rawOptions = type(options) == "table" and options or { Title = options }
+    local section = v2OriginalAddSection(self, options)
+    self.Sections = self.Sections or {}
+    section.Description = rawOptions and rawOptions.Desc or nil
+    section._SearchEntries = {}
+    table.insert(self.Sections, section)
+    return section
+end
+
+local function v2WrapNonRegisteredControl(methodName)
+    local original = SectionMethods[methodName]
+    SectionMethods[methodName] = function(self, options, ...)
+        local rawOptions = type(options) == "table" and options or { Title = options }
+        local controller = original(self, options, ...)
+        local frame = controller and controller.Frame
+            or v2FindNewestFrame(self, rawOptions.Title)
+            or v2FindNewestFrame(self, nil)
+        return v2DecorateController(self.Tab.Window, controller, frame, rawOptions, self)
+    end
+end
+
+v2WrapNonRegisteredControl("AddButton")
+v2WrapNonRegisteredControl("AddParagraph")
+
+function SectionMethods:AddTextArea(options)
+    options = merge({
+        Title = "Text area",
+        Desc = nil,
+        Icon = "file-text",
+        Placeholder = "Type or paste text...",
+        Default = "",
+        Height = 150,
+        Save = false,
+        Callback = function() end,
+    }, options)
+
+    local frame = create("Frame", {
+        Name = options.Title,
+        BackgroundColor3 = Theme.Surface2,
+        BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 0, math.max(tonumber(options.Height) or 150, 120)),
+        Parent = self.Container,
+    })
+    corner(frame, 15)
+
+    local iconObject = createIcon(frame, options.Icon, 18, Theme.TextMuted, 3)
+    iconObject.Frame.Position = UDim2.fromOffset(16, 16)
+
+    create("TextLabel", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(46, 10),
+        Size = UDim2.new(1, -62, 0, 24),
+        FontFace = fontFace("Medium"),
+        Text = options.Title,
+        TextColor3 = Theme.Text,
+        TextSize = fontSize(14),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = frame,
+        ZIndex = 3,
+    })
+
+    local top = 40
+    if options.Desc then
+        create("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(46, 34),
+            Size = UDim2.new(1, -62, 0, 20),
+            FontFace = fontFace("Regular"),
+            Text = options.Desc,
+            TextColor3 = Theme.TextMuted,
+            TextSize = fontSize(11),
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = frame,
+            ZIndex = 3,
+        })
+        top = 60
+    end
+
+    local box = create("TextBox", {
+        BackgroundColor3 = Theme.Surface3,
+        BorderSizePixel = 0,
+        ClearTextOnFocus = false,
+        MultiLine = true,
+        TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        FontFace = fontFace("Regular"),
+        PlaceholderColor3 = Theme.TextDim,
+        PlaceholderText = options.Placeholder,
+        Text = tostring(options.Default or ""),
+        TextColor3 = Theme.Text,
+        TextSize = fontSize(12),
+        Position = UDim2.fromOffset(14, top),
+        Size = UDim2.new(1, -28, 1, -(top + 14)),
+        Parent = frame,
+        ZIndex = 4,
+    })
+    corner(box, 11)
+    padding(box, 12, 12, 10, 10)
+    local boxStroke = stroke(box, Theme.Border, 0.22, 1)
+
+    local controller = { Frame = frame, _Box = box }
+    function controller:Set(value, silent)
+        box.Text = tostring(value or "")
+        if not silent then
+            safeCallback(options.Callback, box.Text)
+        end
+    end
+    function controller:Get()
+        return box.Text
+    end
+    function controller:Focus()
+        box:CaptureFocus()
+    end
+    function controller:Destroy()
+        frame:Destroy()
+    end
+
+    self.Tab.Window:_TrackConnection(box.Focused:Connect(function()
+        tween(boxStroke, 0.14, { Color = Theme.Accent, Transparency = 0 })
+    end))
+    self.Tab.Window:_TrackConnection(box.FocusLost:Connect(function()
+        tween(boxStroke, 0.14, { Color = Theme.Border, Transparency = 0.22 })
+        safeCallback(options.Callback, box.Text)
+        if controller._Commit then
+            controller:_Commit()
+        end
+    end))
+
+    return self.Tab.Window:_RegisterControl(self, options, controller, options.Default, "textarea")
+end
+
+function SectionMethods:AddColorPicker(options)
+    options = merge({
+        Title = "Color",
+        Desc = nil,
+        Icon = "palette",
+        Default = Theme.Accent,
+        Callback = function() end,
+    }, options)
+
+    local collapsedHeight = options.Desc and 72 or 62
+    local expandedHeight = collapsedHeight + 164
+    local base = createElementBase(self, options, collapsedHeight)
+    if base.Icon and base.Icon.Frame then
+        base.Icon.Frame.Position = UDim2.fromOffset(16, options.Desc and 24 or 22)
+    end
+
+    local current = v2HexToColor(options.Default, Theme.Accent)
+    local open = false
+    local preview = createTextButton({
+        BackgroundColor3 = current,
+        Position = UDim2.new(1, -58, 0, options.Desc and 18 or 14),
+        Size = UDim2.fromOffset(40, 32),
+        Parent = base.Frame,
+        ZIndex = 6,
+    })
+    corner(preview, 10)
+    stroke(preview, Theme.Border, 0.08, 1)
+
+    local panel = create("Frame", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(14, collapsedHeight + 6),
+        Size = UDim2.new(1, -28, 0, 150),
+        Visible = false,
+        Parent = base.Frame,
+        ZIndex = 5,
+    })
+
+    local hexBox = create("TextBox", {
+        BackgroundColor3 = Theme.Surface3,
+        BorderSizePixel = 0,
+        ClearTextOnFocus = false,
+        FontFace = fontFace("Medium"),
+        Text = v2ColorToHex(current),
+        PlaceholderText = "#32B4FD",
+        PlaceholderColor3 = Theme.TextDim,
+        TextColor3 = Theme.Text,
+        TextSize = fontSize(12),
+        TextXAlignment = Enum.TextXAlignment.Center,
+        Position = UDim2.new(1, -112, 0, 0),
+        Size = UDim2.fromOffset(112, 32),
+        Parent = panel,
+        ZIndex = 6,
+    })
+    corner(hexBox, 9)
+
+    create("TextLabel", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(0, 0),
+        Size = UDim2.new(1, -122, 0, 32),
+        FontFace = fontFace("Regular"),
+        Text = "HEX",
+        TextColor3 = Theme.TextMuted,
+        TextSize = fontSize(11),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = panel,
+        ZIndex = 6,
+    })
+
+    local rows = {}
+    local controller = { Frame = base.Frame }
+    local updating = false
+
+    local function channelValue(channel)
+        if channel == "R" then return current.R end
+        if channel == "G" then return current.G end
+        return current.B
+    end
+
+    local function composeColor(channel, value)
+        local r, g, b = current.R, current.G, current.B
+        if channel == "R" then r = value elseif channel == "G" then g = value else b = value end
+        return Color3.new(r, g, b)
+    end
+
+    local function updateVisuals()
+        updating = true
+        preview.BackgroundColor3 = current
+        hexBox.Text = v2ColorToHex(current)
+        for channel, row in pairs(rows) do
+            local value = channelValue(channel)
+            row.Fill.Size = UDim2.new(value, 0, 1, 0)
+            row.Knob.Position = UDim2.new(value, 0, 0.5, 0)
+            row.Value.Text = tostring(math.floor(value * 255 + 0.5))
+        end
+        updating = false
+    end
+
+    local function addChannel(channel, y, color)
+        local row = create("Frame", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(0, y),
+            Size = UDim2.new(1, 0, 0, 31),
+            Parent = panel,
+            ZIndex = 6,
+        })
+        create("TextLabel", {
+            BackgroundTransparency = 1,
+            Size = UDim2.fromOffset(22, 31),
+            FontFace = fontFace("Medium"),
+            Text = channel,
+            TextColor3 = color,
+            TextSize = fontSize(12),
+            Parent = row,
+            ZIndex = 7,
+        })
+        local bar = create("TextButton", {
+            AutoButtonColor = false,
+            Text = "",
+            BackgroundColor3 = Theme.Surface3,
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(30, 12),
+            Size = UDim2.new(1, -86, 0, 7),
+            Parent = row,
+            ZIndex = 7,
+        })
+        corner(bar, 99)
+        local fill = create("Frame", {
+            BackgroundColor3 = color,
+            BorderSizePixel = 0,
+            Size = UDim2.new(0, 0, 1, 0),
+            Parent = bar,
+            ZIndex = 8,
+        })
+        corner(fill, 99)
+        local knob = create("Frame", {
+            AnchorPoint = Vector2.new(0.5, 0.5),
+            BackgroundColor3 = Color3.new(1, 1, 1),
+            BorderSizePixel = 0,
+            Position = UDim2.new(0, 0, 0.5, 0),
+            Size = UDim2.fromOffset(14, 14),
+            Parent = bar,
+            ZIndex = 9,
+        })
+        corner(knob, 99)
+        local valueLabel = create("TextLabel", {
+            BackgroundTransparency = 1,
+            AnchorPoint = Vector2.new(1, 0),
+            Position = UDim2.new(1, 0, 0, 0),
+            Size = UDim2.fromOffset(48, 31),
+            FontFace = fontFace("Regular"),
+            Text = "0",
+            TextColor3 = Theme.TextMuted,
+            TextSize = fontSize(11),
+            TextXAlignment = Enum.TextXAlignment.Right,
+            Parent = row,
+            ZIndex = 7,
+        })
+        rows[channel] = { Bar = bar, Fill = fill, Knob = knob, Value = valueLabel }
+
+        local dragging = false
+        local function updateFromX(x)
+            local width = math.max(bar.AbsoluteSize.X, 1)
+            local alpha = math.clamp((x - bar.AbsolutePosition.X) / width, 0, 1)
+            controller:Set(composeColor(channel, alpha))
+        end
+        self.Tab.Window:_TrackConnection(bar.InputBegan:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = true
+                updateFromX(input.Position.X)
+            end
+        end))
+        self.Tab.Window:_TrackConnection(UserInputService.InputChanged:Connect(function(input)
+            if dragging and (input.UserInputType == Enum.UserInputType.MouseMovement
+                or input.UserInputType == Enum.UserInputType.Touch) then
+                updateFromX(input.Position.X)
+            end
+        end))
+        self.Tab.Window:_TrackConnection(UserInputService.InputEnded:Connect(function(input)
+            if input.UserInputType == Enum.UserInputType.MouseButton1
+                or input.UserInputType == Enum.UserInputType.Touch then
+                dragging = false
+            end
+        end))
+    end
+
+    addChannel("R", 39, Color3.fromRGB(248, 113, 113))
+    addChannel("G", 76, Color3.fromRGB(74, 222, 128))
+    addChannel("B", 113, Color3.fromRGB(96, 165, 250))
+
+    local function setOpen(value)
+        open = value == true
+        panel.Visible = open
+        tween(base.Frame, 0.2, {
+            Size = UDim2.new(1, 0, 0, open and expandedHeight or collapsedHeight),
+        }, Enum.EasingStyle.Quint)
+        task.defer(function()
+            if self.Tab and self.Tab.RefreshScroll then
+                self.Tab:RefreshScroll()
+            end
+        end)
+    end
+
+    function controller:Set(value, silent)
+        current = v2HexToColor(value, current)
+        updateVisuals()
+        if not silent then
+            safeCallback(options.Callback, current, v2ColorToHex(current))
+        end
+    end
+    function controller:Get()
+        return current
+    end
+    function controller:Open()
+        setOpen(true)
+    end
+    function controller:Close()
+        setOpen(false)
+    end
+    function controller:Destroy()
+        base.Frame:Destroy()
+    end
+
+    self.Tab.Window:_TrackConnection(preview.MouseButton1Click:Connect(function()
+        setOpen(not open)
+    end))
+    self.Tab.Window:_TrackConnection(hexBox.FocusLost:Connect(function()
+        if not updating then
+            controller:Set(hexBox.Text)
+        end
+    end))
+
+    updateVisuals()
+    return self.Tab.Window:_RegisterControl(self, options, controller, current, "colorpicker")
+end
+
+local V2_STATUS_PRESETS = {
+    Online = { Text = "Online", Color = Color3.fromRGB(74, 222, 128) },
+    Active = { Text = "Active", Color = Color3.fromRGB(74, 222, 128) },
+    Running = { Text = "Running", Color = Color3.fromRGB(50, 180, 253) },
+    Loading = { Text = "Loading", Color = Color3.fromRGB(250, 204, 21) },
+    Waiting = { Text = "Waiting", Color = Color3.fromRGB(250, 204, 21) },
+    Warning = { Text = "Warning", Color = Color3.fromRGB(251, 146, 60) },
+    Offline = { Text = "Offline", Color = Color3.fromRGB(148, 163, 184) },
+    Disabled = { Text = "Disabled", Color = Color3.fromRGB(148, 163, 184) },
+    Error = { Text = "Error", Color = Color3.fromRGB(248, 113, 113) },
+}
+
+function SectionMethods:AddStatus(options)
+    options = merge({
+        Title = "Status",
+        Desc = nil,
+        Icon = "activity",
+        Default = "Offline",
+    }, options)
+
+    local base = createElementBase(self, options)
+    local badge = create("Frame", {
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundColor3 = Theme.Surface3,
+        BorderSizePixel = 0,
+        Position = UDim2.new(1, -14, 0.5, -15),
+        AnchorPoint = Vector2.new(1, 0),
+        Size = UDim2.fromOffset(0, 30),
+        Parent = base.Frame,
+        ZIndex = 5,
+    })
+    corner(badge, 99)
+    padding(badge, 11, 11, 0, 0)
+    local layout = create("UIListLayout", {
+        FillDirection = Enum.FillDirection.Horizontal,
+        VerticalAlignment = Enum.VerticalAlignment.Center,
+        Padding = UDim.new(0, 7),
+        Parent = badge,
+    })
+    local dot = create("Frame", {
+        BackgroundColor3 = Theme.TextDim,
+        BorderSizePixel = 0,
+        Size = UDim2.fromOffset(8, 8),
+        Parent = badge,
+        ZIndex = 6,
+    })
+    corner(dot, 99)
+    local label = create("TextLabel", {
+        AutomaticSize = Enum.AutomaticSize.X,
+        BackgroundTransparency = 1,
+        Size = UDim2.fromOffset(0, 30),
+        FontFace = fontFace("Medium"),
+        Text = "Offline",
+        TextColor3 = Theme.Text,
+        TextSize = fontSize(11),
+        Parent = badge,
+        ZIndex = 6,
+    })
+
+    local current = options.Default
+    local controller = { Frame = base.Frame }
+    function controller:SetStatus(status, customText, customColor)
+        current = status
+        local preset = type(status) == "table" and status or V2_STATUS_PRESETS[tostring(status)]
+        local displayText = customText
+            or (type(preset) == "table" and preset.Text)
+            or tostring(status or "Unknown")
+        local displayColor = customColor
+            or (type(preset) == "table" and preset.Color)
+            or Theme.TextDim
+        label.Text = displayText
+        dot.BackgroundColor3 = displayColor
+        return self
+    end
+    function controller:Set(value)
+        self:SetStatus(value)
+    end
+    function controller:Get()
+        return current
+    end
+    function controller:Destroy()
+        base.Frame:Destroy()
+    end
+    controller:SetStatus(options.Default)
+    return v2DecorateController(self.Tab.Window, controller, base.Frame, options, self)
+end
+
+function SectionMethods:AddList(options)
+    local listWindow = self.Tab.Window
+    options = merge({
+        Title = "List",
+        Desc = nil,
+        Icon = "list",
+        Items = {},
+        Height = 330,
+        Searchable = true,
+        Sortable = true,
+        EmptyText = listWindow:T("NoItems", "No items"),
+        ItemHeight = 64,
+        ActionText = "Open",
+        OnAction = function() end,
+    }, options)
+
+    local frame = create("Frame", {
+        Name = options.Title,
+        BackgroundColor3 = Theme.Surface2,
+        BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 0, math.max(tonumber(options.Height) or 330, 210)),
+        Parent = self.Container,
+    })
+    corner(frame, 15)
+
+    local iconObject = createIcon(frame, options.Icon, 18, Theme.Accent, 4)
+    iconObject.Frame.Position = UDim2.fromOffset(16, 16)
+    create("TextLabel", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(46, 9),
+        Size = UDim2.new(1, -160, 0, 25),
+        FontFace = fontFace("Medium"),
+        Text = options.Title,
+        TextColor3 = Theme.Text,
+        TextSize = fontSize(14),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = frame,
+        ZIndex = 4,
+    })
+    if options.Desc then
+        create("TextLabel", {
+            BackgroundTransparency = 1,
+            Position = UDim2.fromOffset(46, 34),
+            Size = UDim2.new(1, -160, 0, 18),
+            FontFace = fontFace("Regular"),
+            Text = options.Desc,
+            TextColor3 = Theme.TextMuted,
+            TextSize = fontSize(11),
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Parent = frame,
+            ZIndex = 4,
+        })
+    end
+
+    local headerHeight = options.Desc and 62 or 50
+    local searchBox
+    if options.Searchable then
+        searchBox = create("TextBox", {
+            BackgroundColor3 = Theme.Surface3,
+            BorderSizePixel = 0,
+            ClearTextOnFocus = false,
+            FontFace = fontFace("Regular"),
+            PlaceholderText = listWindow:T("SearchList", "Search list..."),
+            PlaceholderColor3 = Theme.TextDim,
+            Text = "",
+            TextColor3 = Theme.Text,
+            TextSize = fontSize(11),
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Position = UDim2.fromOffset(14, headerHeight),
+            Size = UDim2.new(1, options.Sortable and -128 or -28, 0, 34),
+            Parent = frame,
+            ZIndex = 5,
+        })
+        corner(searchBox, 10)
+        padding(searchBox, 11, 11, 0, 0)
+        headerHeight = headerHeight + 44
+    end
+
+    local sortButton
+    if options.Sortable then
+        sortButton = createTextButton({
+            BackgroundColor3 = Theme.Surface3,
+            Position = UDim2.new(1, -104, 0, options.Desc and 62 or 50),
+            Size = UDim2.fromOffset(90, 34),
+            Text = listWindow:T("SortOff", "Sort: Off"),
+            TextSize = fontSize(10),
+            Parent = frame,
+            ZIndex = 5,
+        })
+        corner(sortButton, 10)
+    end
+
+    local list = create("ScrollingFrame", {
+        Active = true,
+        BackgroundTransparency = 1,
+        BorderSizePixel = 0,
+        CanvasSize = UDim2.new(),
+        AutomaticCanvasSize = Enum.AutomaticSize.None,
+        ScrollingDirection = Enum.ScrollingDirection.Y,
+        ElasticBehavior = Enum.ElasticBehavior.Never,
+        Position = UDim2.fromOffset(14, headerHeight),
+        Size = UDim2.new(1, -28, 1, -(headerHeight + 14)),
+        ScrollBarThickness = 2,
+        ScrollBarImageColor3 = Theme.Border,
+        Parent = frame,
+        ZIndex = 4,
+    })
+    local listLayout = create("UIListLayout", {
+        Padding = UDim.new(0, 7),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = list,
+    })
+    local refreshCanvas = bindVerticalCanvas(list, listLayout, 4, self.Tab.Window.MobileTouchScroll)
+
+    local controller = {
+        Frame = frame,
+        Items = deepClone(options.Items or {}),
+        Search = "",
+        SortMode = "Off",
+        _Rows = {},
+    }
+
+    local function itemSearchText(item)
+        return v2NormalizeText(table.concat({
+            tostring(item.Title or item.Name or ""),
+            tostring(item.Description or item.Desc or ""),
+            tostring(item.Status or ""),
+            tostring(item.Keywords or ""),
+        }, " "))
+    end
+
+    local function clearRows()
+        for _, row in ipairs(controller._Rows) do
+            if row and row.Parent then
+                row:Destroy()
+            end
+        end
+        controller._Rows = {}
+    end
+
+    local function render()
+        clearRows()
+        local filtered = {}
+        local search = v2NormalizeText(controller.Search)
+        for index, rawItem in ipairs(controller.Items) do
+            local item = type(rawItem) == "table" and rawItem or { Title = tostring(rawItem) }
+            item._OriginalIndex = index
+            if search == "" or itemSearchText(item):find(search, 1, true) then
+                table.insert(filtered, item)
+            end
+        end
+
+        if controller.SortMode ~= "Off" then
+            table.sort(filtered, function(a, b)
+                local left = tostring(a.Title or a.Name or ""):lower()
+                local right = tostring(b.Title or b.Name or ""):lower()
+                if controller.SortMode == "A-Z" then
+                    return left < right
+                end
+                return left > right
+            end)
+        end
+
+        if #filtered == 0 then
+            local empty = create("TextLabel", {
+                BackgroundTransparency = 1,
+                Size = UDim2.new(1, 0, 0, 48),
+                FontFace = fontFace("Regular"),
+                Text = options.EmptyText,
+                TextColor3 = Theme.TextDim,
+                TextSize = fontSize(12),
+                Parent = list,
+                ZIndex = 5,
+            })
+            table.insert(controller._Rows, empty)
+        end
+
+        for renderIndex, item in ipairs(filtered) do
+            local row = create("Frame", {
+                BackgroundColor3 = Theme.Surface3,
+                BorderSizePixel = 0,
+                Size = UDim2.new(1, -4, 0, math.max(tonumber(options.ItemHeight) or 64, 54)),
+                LayoutOrder = renderIndex,
+                Parent = list,
+                ZIndex = 5,
+            })
+            corner(row, 12)
+            table.insert(controller._Rows, row)
+
+            local showAction = item.ActionText ~= false and options.ActionText ~= false
+            local left = 14
+            if item.Icon then
+                local itemIcon = createIcon(row, item.Icon, 17, item.IconColor or Theme.TextMuted, 6)
+                itemIcon.Frame.Position = UDim2.new(0, 14, 0.5, -8)
+                left = 43
+            end
+
+            create("TextLabel", {
+                BackgroundTransparency = 1,
+                Position = UDim2.fromOffset(left, 8),
+                Size = UDim2.new(1, showAction and -(left + 112) or -(left + 14), 0, 22),
+                FontFace = fontFace("Medium"),
+                Text = tostring(item.Title or item.Name or "Item"),
+                TextColor3 = Theme.Text,
+                TextSize = fontSize(12),
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = row,
+                ZIndex = 6,
+            })
+            create("TextLabel", {
+                BackgroundTransparency = 1,
+                Position = UDim2.fromOffset(left, 31),
+                Size = UDim2.new(1, showAction and -(left + 112) or -(left + 14), 0, 19),
+                FontFace = fontFace("Regular"),
+                Text = tostring(item.Description or item.Desc or ""),
+                TextColor3 = Theme.TextMuted,
+                TextSize = fontSize(10),
+                TextTruncate = Enum.TextTruncate.AtEnd,
+                TextXAlignment = Enum.TextXAlignment.Left,
+                Parent = row,
+                ZIndex = 6,
+            })
+
+            if item.Status then
+                local statusPreset = V2_STATUS_PRESETS[tostring(item.Status)] or {}
+                local statusDot = create("Frame", {
+                    BackgroundColor3 = item.StatusColor or statusPreset.Color or Theme.TextDim,
+                    BorderSizePixel = 0,
+                    Position = UDim2.new(1, -112, 0, 13),
+                    Size = UDim2.fromOffset(7, 7),
+                    Parent = row,
+                    ZIndex = 7,
+                })
+                corner(statusDot, 99)
+            end
+
+            if showAction then
+                local action = createTextButton({
+                    BackgroundColor3 = Theme.Surface2,
+                    Position = UDim2.new(1, -96, 0.5, -16),
+                    Size = UDim2.fromOffset(82, 32),
+                    Text = tostring(item.ActionText or options.ActionText),
+                    TextSize = fontSize(11),
+                    Parent = row,
+                    ZIndex = 7,
+                })
+                corner(action, 10)
+                self.Tab.Window:_TrackConnection(action.MouseButton1Click:Connect(function()
+                    safeCallback(item.Callback or options.OnAction, item, item._OriginalIndex, controller)
+                end))
+            end
+        end
+        task.defer(refreshCanvas)
+    end
+
+    function controller:SetItems(items)
+        self.Items = deepClone(type(items) == "table" and items or {})
+        render()
+        return self
+    end
+    function controller:AddItem(item)
+        table.insert(self.Items, deepClone(item))
+        render()
+        return self
+    end
+    function controller:RemoveItem(idOrIndex)
+        for index = #self.Items, 1, -1 do
+            local item = self.Items[index]
+            if index == idOrIndex or (type(item) == "table" and (item.Id == idOrIndex or item.Key == idOrIndex)) then
+                table.remove(self.Items, index)
+                break
+            end
+        end
+        render()
+        return self
+    end
+    function controller:Clear()
+        self.Items = {}
+        render()
+        return self
+    end
+    function controller:GetItems()
+        return deepClone(self.Items)
+    end
+    function controller:SetSearch(value)
+        self.Search = tostring(value or "")
+        if searchBox and searchBox.Text ~= self.Search then
+            searchBox.Text = self.Search
+        end
+        render()
+        return self
+    end
+    function controller:SetSort(mode)
+        local valid = { ["Off"] = true, ["A-Z"] = true, ["Z-A"] = true }
+        self.SortMode = valid[mode] and mode or "Off"
+        if sortButton then
+            sortButton.Text = "Sort: " .. self.SortMode
+        end
+        render()
+        return self
+    end
+    function controller:Refresh()
+        render()
+        return self
+    end
+    function controller:Destroy()
+        frame:Destroy()
+    end
+
+    if searchBox then
+        self.Tab.Window:_TrackConnection(searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            controller.Search = searchBox.Text
+            render()
+        end))
+    end
+    if sortButton then
+        self.Tab.Window:_TrackConnection(sortButton.MouseButton1Click:Connect(function()
+            if controller.SortMode == "Off" then
+                controller:SetSort("A-Z")
+            elseif controller.SortMode == "A-Z" then
+                controller:SetSort("Z-A")
+            else
+                controller:SetSort("Off")
+            end
+        end))
+    end
+
+    render()
+    return v2DecorateController(self.Tab.Window, controller, frame, options, self)
+end
+
+function WindowMethods:Confirm(options)
+    options = merge({
+        Title = self:T("ConfirmAction", "Confirm action"),
+        Content = self:T("ConfirmQuestion", "Are you sure you want to continue?"),
+        ConfirmText = self:T("ConfirmButton", "Confirm"),
+        CancelText = self:T("CancelButton", "Cancel"),
+        Danger = false,
+        Callback = function() end,
+    }, options)
+
+    if self._ActiveDialog and self._ActiveDialog.Close then
+        self._ActiveDialog:Close(false)
+    end
+
+    local overlay = create("TextButton", {
+        AutoButtonColor = false,
+        Text = "",
+        BackgroundColor3 = Color3.new(0, 0, 0),
+        BackgroundTransparency = 0.35,
+        BorderSizePixel = 0,
+        Size = UDim2.fromScale(1, 1),
+        Parent = self.ScreenGui,
+        ZIndex = 400,
+    })
+
+    local card = create("Frame", {
+        AnchorPoint = Vector2.new(0.5, 0.5),
+        Active = true,
+        BackgroundColor3 = Theme.Surface,
+        BorderSizePixel = 0,
+        Position = UDim2.fromScale(0.5, 0.5),
+        Size = UDim2.fromOffset(390, 220),
+        Parent = overlay,
+        ZIndex = 401,
+    })
+    corner(card, 16)
+    stroke(card, Theme.Border, 0.12, 1)
+
+    local dialogIcon = createIcon(card, options.Danger and "triangle-alert" or "circle-help", 24,
+        options.Danger and Theme.Danger or Theme.Accent, 402)
+    dialogIcon.Frame.Position = UDim2.fromOffset(20, 20)
+    create("TextLabel", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(58, 14),
+        Size = UDim2.new(1, -78, 0, 34),
+        FontFace = fontFace("SemiBold"),
+        Text = options.Title,
+        TextColor3 = Theme.Text,
+        TextSize = fontSize(16),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = card,
+        ZIndex = 402,
+    })
+    create("TextLabel", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(20, 62),
+        Size = UDim2.new(1, -40, 0, 84),
+        FontFace = fontFace("Regular"),
+        Text = options.Content,
+        TextColor3 = Theme.TextMuted,
+        TextSize = fontSize(12),
+        TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        Parent = card,
+        ZIndex = 402,
+    })
+
+    local cancel = createTextButton({
+        BackgroundColor3 = Theme.Surface3,
+        Position = UDim2.new(1, -206, 1, -54),
+        Size = UDim2.fromOffset(88, 36),
+        Text = options.CancelText,
+        Parent = card,
+        ZIndex = 402,
+    })
+    corner(cancel, 10)
+    local confirm = createTextButton({
+        BackgroundColor3 = options.Danger and Theme.Danger or Theme.AccentDark,
+        Position = UDim2.new(1, -108, 1, -54),
+        Size = UDim2.fromOffset(88, 36),
+        Text = options.ConfirmText,
+        Parent = card,
+        ZIndex = 402,
+    })
+    corner(confirm, 10)
+
+    local windowReference = self
+    local controller = { Overlay = overlay, Closed = false }
+    function controller:Close(result)
+        if self.Closed then
+            return
+        end
+        self.Closed = true
+        safeCallback(options.Callback, result == true)
+        if overlay and overlay.Parent then
+            overlay:Destroy()
+        end
+        if windowReference and windowReference._ActiveDialog == self then
+            windowReference._ActiveDialog = nil
+        end
+    end
+
+    self._ActiveDialog = controller
+    self:_TrackConnection(cancel.MouseButton1Click:Connect(function()
+        controller:Close(false)
+    end))
+    self:_TrackConnection(confirm.MouseButton1Click:Connect(function()
+        controller:Close(true)
+    end))
+    self:_TrackConnection(overlay.MouseButton1Click:Connect(function()
+        controller:Close(false)
+    end))
+    return controller
+end
+
+function WindowMethods:ConfirmAsync(options)
+    local event = Instance.new("BindableEvent")
+    local result
+    local originalCallback = options and options.Callback
+    local dialogOptions = merge({}, options)
+    dialogOptions.Callback = function(value)
+        result = value
+        safeCallback(originalCallback, value)
+        event:Fire()
+    end
+    self:Confirm(dialogOptions)
+    event.Event:Wait()
+    event:Destroy()
+    return result
+end
+
+local v2OriginalNotify = WindowMethods.Notify
+function WindowMethods:Notify(options)
+    if type(options) == "string" then
+        options = { Title = options }
+    end
+    options = merge({
+        Title = "Notification",
+        Content = "",
+        Duration = 4,
+        Icon = "bell",
+        Type = "Info",
+        Id = nil,
+        ActionText = nil,
+        ActionCallback = nil,
+        Closable = true,
+    }, options)
+
+    self._Notifications = self._Notifications or {}
+    self._NotificationById = self._NotificationById or {}
+    self.MaxNotifications = tonumber(self.MaxNotifications) or 4
+
+    if options.Id and self._NotificationById[options.Id] then
+        local existing = self._NotificationById[options.Id]
+        existing:Update(options)
+        return existing
+    end
+
+    local accent = Theme.Accent
+    if options.Type == "Success" then accent = Theme.Success
+    elseif options.Type == "Warning" then accent = Theme.Warning
+    elseif options.Type == "Error" or options.Type == "Danger" then accent = Theme.Danger end
+
+    local card = create("CanvasGroup", {
+        BackgroundColor3 = Theme.Surface,
+        BorderSizePixel = 0,
+        Size = UDim2.fromOffset(320, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        GroupTransparency = 1,
+        Parent = self.NotificationList,
+        ZIndex = 100,
+    })
+    corner(card, 13)
+    stroke(card, Theme.Border, 0.16, 1)
+    padding(card, 14, 14, 12, 10)
+    local layout = create("UIListLayout", {
+        Padding = UDim.new(0, 7),
+        SortOrder = Enum.SortOrder.LayoutOrder,
+        Parent = card,
+    })
+
+    local header = create("Frame", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 23),
+        LayoutOrder = 1,
+        Parent = card,
+        ZIndex = 101,
+    })
+    local icon = createIcon(header, options.Icon, 18, accent, 102)
+    icon.Frame.Position = UDim2.fromOffset(0, 2)
+    local titleLabel = create("TextLabel", {
+        BackgroundTransparency = 1,
+        Position = UDim2.fromOffset(28, 0),
+        Size = UDim2.new(1, options.Closable and -52 or -28, 1, 0),
+        FontFace = fontFace("SemiBold"),
+        Text = options.Title,
+        TextColor3 = Theme.Text,
+        TextSize = fontSize(13),
+        TextXAlignment = Enum.TextXAlignment.Left,
+        Parent = header,
+        ZIndex = 102,
+    })
+    local closeButton
+    if options.Closable then
+        closeButton = createTextButton({
+            BackgroundTransparency = 1,
+            Position = UDim2.new(1, -24, 0, 0),
+            Size = UDim2.fromOffset(24, 23),
+            Text = "×",
+            TextColor3 = Theme.TextMuted,
+            TextSize = fontSize(16),
+            Parent = header,
+            ZIndex = 103,
+        })
+    end
+
+    local contentLabel = create("TextLabel", {
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        LayoutOrder = 2,
+        FontFace = fontFace("Regular"),
+        Text = options.Content,
+        TextColor3 = Theme.TextMuted,
+        TextSize = fontSize(11),
+        TextWrapped = true,
+        TextXAlignment = Enum.TextXAlignment.Left,
+        TextYAlignment = Enum.TextYAlignment.Top,
+        Parent = card,
+        ZIndex = 102,
+    })
+
+    local actionButton
+    if options.ActionText then
+        actionButton = createTextButton({
+            BackgroundColor3 = Theme.Surface3,
+            Size = UDim2.new(1, 0, 0, 31),
+            LayoutOrder = 3,
+            Text = options.ActionText,
+            TextSize = fontSize(11),
+            Parent = card,
+            ZIndex = 102,
+        })
+        corner(actionButton, 9)
+    end
+
+    local progressBackground = create("Frame", {
+        BackgroundColor3 = Theme.Surface3,
+        BorderSizePixel = 0,
+        Size = UDim2.new(1, 0, 0, 3),
+        LayoutOrder = 4,
+        Parent = card,
+        ZIndex = 102,
+    })
+    corner(progressBackground, 99)
+    local progress = create("Frame", {
+        BackgroundColor3 = accent,
+        BorderSizePixel = 0,
+        Size = UDim2.fromScale(1, 1),
+        Parent = progressBackground,
+        ZIndex = 103,
+    })
+    corner(progress, 99)
+
+    local controller = {
+        Card = card,
+        Id = options.Id,
+        Closed = false,
+        Token = 0,
+    }
+
+    local function removeFromQueue()
+        for index = #self._Notifications, 1, -1 do
+            if self._Notifications[index] == controller then
+                table.remove(self._Notifications, index)
+                break
+            end
+        end
+        if controller.Id and self._NotificationById[controller.Id] == controller then
+            self._NotificationById[controller.Id] = nil
+        end
+    end
+
+    function controller:Close()
+        if self.Closed then return end
+        self.Closed = true
+        removeFromQueue()
+        tween(card, 0.16, { GroupTransparency = 1 })
+        task.delay(0.17, function()
+            if card and card.Parent then card:Destroy() end
+        end)
+    end
+
+    function controller:Update(newOptions)
+        if self.Closed then return self end
+        newOptions = merge(options, newOptions)
+        options = newOptions
+        titleLabel.Text = tostring(options.Title or "Notification")
+        contentLabel.Text = tostring(options.Content or "")
+        self.Token = self.Token + 1
+        local token = self.Token
+        progress.Size = UDim2.fromScale(1, 1)
+        local duration = math.max(tonumber(options.Duration) or 4, 0.2)
+        tween(progress, duration, { Size = UDim2.new(0, 0, 1, 0) }, Enum.EasingStyle.Linear)
+        task.delay(duration, function()
+            if not self.Closed and token == self.Token then
+                self:Close()
+            end
+        end)
+        return self
+    end
+
+    if closeButton then
+        self:_TrackConnection(closeButton.MouseButton1Click:Connect(function()
+            controller:Close()
+        end))
+    end
+    if actionButton then
+        self:_TrackConnection(actionButton.MouseButton1Click:Connect(function()
+            safeCallback(options.ActionCallback, controller)
+        end))
+    end
+
+    table.insert(self._Notifications, controller)
+    if options.Id then self._NotificationById[options.Id] = controller end
+    while #self._Notifications > self.MaxNotifications do
+        local oldest = self._Notifications[1]
+        if oldest then oldest:Close() else break end
+    end
+
+    task.defer(function()
+        if card and card.Parent then
+            tween(card, 0.18, { GroupTransparency = 0 }, Enum.EasingStyle.Quint)
+        end
+    end)
+    controller:Update(options)
+    return controller
+end
+
+function WindowMethods:ExportTheme()
+    local payload = {
+        Version = 1,
+        Name = self.ThemeName or ActiveThemeName or "Custom",
+        Colors = v2SerializeThemePalette(Theme),
+    }
+    local ok, encoded = pcall(function()
+        return HttpService:JSONEncode(payload)
+    end)
+    return ok, encoded
+end
+
+function WindowMethods:ImportTheme(source)
+    local ok, data = pcall(function()
+        return HttpService:JSONDecode(tostring(source or ""))
+    end)
+    if not ok or type(data) ~= "table" then
+        return false, "Invalid theme JSON"
+    end
+    local palette = v2DeserializeThemePalette(data.Colors or data)
+    palette.Name = tostring(data.Name or "Custom")
+    return self:SetTheme(palette)
+end
+
+function WindowMethods:AddThemeEditor(tab, options)
+    options = merge({
+        Title = self:T("ThemeEditorTitle", "Theme editor"),
+        Desc = self:T("ThemeEditorDesc", "Choose a preset or create your own colors"),
+        IncludeTransfer = true,
+    }, options)
+
+    local section = tab:AddSection({ Title = options.Title, Desc = options.Desc })
+    local pickers = {}
+    local preset = self:_AddThemeControls(section, {
+        Title = options.PresetTitle or self:T("ThemePresetTitle", "Theme preset"),
+        Desc = options.PresetDesc or self:T("ThemePresetDesc", "Start from a built-in color preset"),
+        Flag = options.PresetFlag or "__VoltzTheme",
+        Callback = function()
+            task.defer(function()
+                for key, picker in pairs(pickers) do
+                    if picker and picker.Set then picker:Set(Theme[key], true) end
+                end
+            end)
+        end,
+    })
+
+    local editableKeys = options.Keys or { "Accent", "Background", "Surface2", "Surface3", "Border", "Text" }
+    for _, key in ipairs(editableKeys) do
+        pickers[key] = section:AddColorPicker({
+            Title = key,
+            Desc = "Customize " .. key,
+            Icon = key == "Text" and "type" or "palette",
+            Default = Theme[key],
+            Flag = "__VoltzThemeColor_" .. key,
+            Callback = function(color)
+                local palette = cloneTable(Theme)
+                palette.Name = "Custom"
+                palette[key] = color
+                self:SetTheme(palette)
+            end,
+        })
+    end
+
+    if options.IncludeTransfer ~= false then
+        local transfer = section:AddTextArea({
+            Title = self:T("ThemeTransferTitle", "Theme import / export"),
+            Desc = self:T("ThemeTransferDesc", "Copy or paste a VoltzUI theme JSON string"),
+            Icon = "braces",
+            Height = 170,
+            Save = false,
+        })
+        section:AddButton({
+            Title = self:T("ExportTheme", "Export theme"),
+            Desc = "Put the current theme JSON into the text area",
+            Icon = "upload",
+            ButtonText = "Export",
+            Callback = function()
+                local ok, result = self:ExportTheme()
+                if ok then transfer:Set(result, true) end
+            end,
+        })
+        section:AddButton({
+            Title = self:T("ImportTheme", "Import theme"),
+            Desc = "Apply the JSON currently inside the text area",
+            Icon = "download",
+            ButtonText = "Import",
+            Callback = function()
+                local ok, message = self:ImportTheme(transfer:Get())
+                self:Notify({
+                    Title = ok and "Theme imported" or "Theme import failed",
+                    Content = tostring(message),
+                    Type = ok and "Success" or "Error",
+                })
+            end,
+        })
+    end
+
+    return section, pickers, preset
+end
+
+function WindowMethods:ExportConfig(configName)
+    if configName then self:SetConfigName(configName) end
+    if not fileSystemAvailable() then
+        return false, "Executor file functions are unavailable"
+    end
+    local okExists, exists = pcall(isfile, self.Config.Path)
+    if not okExists or not exists then
+        local saved, saveMessage = self:SaveConfig(self.Config.FileName)
+        if not saved then return false, saveMessage end
+    end
+    local ok, content = pcall(readfile, self.Config.Path)
+    if not ok then return false, tostring(content) end
+    return true, content
+end
+
+function WindowMethods:ImportConfig(source, configName)
+    if not self.Config.Enabled then return false, "Config is disabled" end
+    local okDecode, data = pcall(function()
+        return HttpService:JSONDecode(tostring(source or ""))
+    end)
+    if not okDecode or type(data) ~= "table" or type(data.Values) ~= "table" then
+        return false, "Invalid VoltzUI config JSON"
+    end
+    self:SetConfigName(configName or self.Config.FileName)
+    ensureFolder(self.Config.Folder)
+    local okEncode, encoded = pcall(function() return HttpService:JSONEncode(data) end)
+    if not okEncode then return false, tostring(encoded) end
+    local okWrite, writeError = pcall(writefile, self.Config.Path, encoded)
+    if not okWrite then return false, tostring(writeError) end
+    return true, self.Config.Path
+end
+
+function WindowMethods:DuplicateConfig(sourceName, targetName)
+    local sourcePath = buildConfigPath(self.Config.Folder, sourceName)
+    local targetPath, safeTarget = buildConfigPath(self.Config.Folder, targetName)
+    local okTarget, targetExists = pcall(isfile, targetPath)
+    if okTarget and targetExists then return false, "Target config already exists: " .. safeTarget end
+    local okRead, content = pcall(readfile, sourcePath)
+    if not okRead then return false, tostring(content) end
+    ensureFolder(self.Config.Folder)
+    local okWrite, writeError = pcall(writefile, targetPath, content)
+    if not okWrite then return false, tostring(writeError) end
+    return true, safeTarget
+end
+
+function WindowMethods:RenameConfig(sourceName, targetName)
+    local sourcePath, safeSource = buildConfigPath(self.Config.Folder, sourceName)
+    local targetPath, safeTarget = buildConfigPath(self.Config.Folder, targetName)
+    if safeTarget == safeSource then return true, safeTarget end
+    local okTarget, targetExists = pcall(isfile, targetPath)
+    if okTarget and targetExists and safeTarget ~= safeSource then return false, "Target config already exists: " .. safeTarget end
+    local okRead, content = pcall(readfile, sourcePath)
+    if not okRead then return false, tostring(content) end
+    local okWrite, writeError = pcall(writefile, targetPath, content)
+    if not okWrite then return false, tostring(writeError) end
+    if type(delfile) == "function" then pcall(delfile, sourcePath) end
+    if self:GetAutoloadConfig() == safeSource then
+        self:SetAutoloadConfig(safeTarget)
+    end
+    if self.Config.FileName == safeSource then self:SetConfigName(safeTarget) end
+    return true, safeTarget
+end
+
+function WindowMethods:GetConfigMetadata(configName)
+    local path, safeName = buildConfigPath(self.Config.Folder, configName or self.Config.FileName)
+    local metadata = {
+        Name = safeName,
+        Path = path,
+        Exists = false,
+        Size = 0,
+        IsActive = self.Config.FileName == safeName,
+        IsAutoload = self:GetAutoloadConfig() == safeName,
+    }
+    local okExists, exists = pcall(isfile, path)
+    metadata.Exists = okExists and exists == true
+    if metadata.Exists then
+        local okRead, content = pcall(readfile, path)
+        if okRead and type(content) == "string" then metadata.Size = #content end
+        if type(getfileinfo) == "function" then
+            local okInfo, info = pcall(getfileinfo, path)
+            if okInfo and type(info) == "table" then metadata.FileInfo = info end
+        end
+    end
+    return metadata
+end
+
+function WindowMethods:AddAdvancedConfigSection(tab, options)
+    options = merge({
+        Title = self:T("AdvancedConfigTitle", "Advanced config tools"),
+        Desc = self:T("AdvancedConfigDesc", "Rename, duplicate, export and import config profiles"),
+    }, options)
+    self._AdvancedConfigTabs = self._AdvancedConfigTabs or setmetatable({}, { __mode = "k" })
+    if self._AdvancedConfigTabs[tab] then
+        return self._AdvancedConfigTabs[tab]
+    end
+
+    local section = tab:AddSection({ Title = options.Title, Desc = options.Desc })
+    self._AdvancedConfigTabs[tab] = section
+
+    local targetName = section:AddInput({
+        Title = self:T("TargetConfigName", "Target config name"),
+        Desc = self:T("TargetConfigDesc", "Used by rename, duplicate and import"),
+        Icon = "file-pen-line",
+        Default = self.Config.FileName .. "_copy",
+        Save = false,
+    })
+    local transfer = section:AddTextArea({
+        Title = self:T("ConfigTransferTitle", "Config import / export"),
+        Desc = self:T("ConfigTransferDesc", "Copy or paste a VoltzUI config JSON string"),
+        Icon = "braces",
+        Height = 190,
+        Save = false,
+    })
+
+    section:AddButton({
+        Title = self:T("DuplicateConfig", "Duplicate current config"),
+        Desc = "Create a copy using the target config name",
+        Icon = "copy",
+        ButtonText = "Duplicate",
+        Callback = function()
+            local ok, message = self:DuplicateConfig(self.Config.FileName, targetName:Get())
+            self:Notify({ Title = ok and "Config duplicated" or "Duplicate failed", Content = tostring(message), Type = ok and "Success" or "Error" })
+        end,
+    })
+    section:AddButton({
+        Title = self:T("RenameConfig", "Rename current config"),
+        Desc = "Rename the current config to the target name",
+        Icon = "file-pen-line",
+        ButtonText = "Rename",
+        Callback = function()
+            self:Confirm({
+                Title = "Rename config?",
+                Content = "Rename '" .. self.Config.FileName .. "' to '" .. tostring(targetName:Get()) .. "'?",
+                ConfirmText = "Rename",
+                Callback = function(confirmed)
+                    if not confirmed then return end
+                    local ok, message = self:RenameConfig(self.Config.FileName, targetName:Get())
+                    self:Notify({ Title = ok and "Config renamed" or "Rename failed", Content = tostring(message), Type = ok and "Success" or "Error" })
+                end,
+            })
+        end,
+    })
+    section:AddButton({
+        Title = self:T("ExportConfig", "Export current config"),
+        Desc = "Put the current config JSON into the text area",
+        Icon = "upload",
+        ButtonText = "Export",
+        Callback = function()
+            local ok, content = self:ExportConfig(self.Config.FileName)
+            if ok then transfer:Set(content, true) end
+            self:Notify({ Title = ok and "Config exported" or "Export failed", Content = ok and self.Config.FileName or tostring(content), Type = ok and "Success" or "Error" })
+        end,
+    })
+    section:AddButton({
+        Title = self:T("ImportConfig", "Import as target config"),
+        Desc = "Write the text area JSON as the target config name",
+        Icon = "download",
+        ButtonText = "Import",
+        Callback = function()
+            local ok, message = self:ImportConfig(transfer:Get(), targetName:Get())
+            self:Notify({ Title = ok and "Config imported" or "Import failed", Content = tostring(message), Type = ok and "Success" or "Error" })
+        end,
+    })
+    return section
+end
+
+local v2OriginalAddConfigSection = WindowMethods.AddConfigSection
+function WindowMethods:AddConfigSection(tab, options)
+    options = options or {}
+    local section = v2OriginalAddConfigSection(self, tab, options)
+    if options.IncludeAdvanced ~= false then
+        self:AddAdvancedConfigSection(tab, options.AdvancedOptions)
+    end
+    return section
+end
+
+function WindowMethods:SetSidebarOpen(value)
+    if not self.MobileDrawerEnabled or not self.Sidebar or not self.Content then
+        return
+    end
+    self.SidebarOpen = value == true
+    local width = self.Sidebar.Size.X.Offset
+    tween(self.Sidebar, 0.2, {
+        Position = self.SidebarOpen and UDim2.fromOffset(0, 0) or UDim2.fromOffset(-width - 8, 0),
+    }, Enum.EasingStyle.Quint)
+    if self.MobileScrim then
+        self.MobileScrim.Visible = self.SidebarOpen
+        self.MobileScrim.BackgroundTransparency = self.SidebarOpen and 0.45 or 1
+    end
+end
+
+function WindowMethods:ToggleSidebar()
+    self:SetSidebarOpen(not self.SidebarOpen)
+end
+
+function WindowMethods:_InitializeProSuite(options)
+    options = options or {}
+    self._Connections = self._Connections or {}
+    self._CleanupCallbacks = self._CleanupCallbacks or {}
+    self._SearchEntries = self._SearchEntries or {}
+    self.MaxNotifications = tonumber(options.MaxNotifications) or 4
+    self.SearchEnabled = options.SearchEnabled ~= false
+    self.SearchQuery = ""
+
+    local content = self.PageContainer and self.PageContainer.Parent
+    local sidebar = self.TabList and self.TabList.Parent
+    self.Content = content
+    self.Sidebar = sidebar
+
+    local tooltip = create("CanvasGroup", {
+        BackgroundColor3 = Theme.Surface3,
+        BorderSizePixel = 0,
+        Size = UDim2.fromOffset(280, 0),
+        AutomaticSize = Enum.AutomaticSize.Y,
+        Visible = false,
+        GroupTransparency = 1,
+        Parent = self.ScreenGui,
+        ZIndex = 700,
+    })
+    corner(tooltip, 9)
+    stroke(tooltip, Theme.Border, 0.18, 1)
+    padding(tooltip, 10, 10, 7, 7)
+    local tooltipLabel = create("TextLabel", {
+        AutomaticSize = Enum.AutomaticSize.Y,
+        BackgroundTransparency = 1,
+        Size = UDim2.new(1, 0, 0, 0),
+        FontFace = fontFace("Regular"),
+        Text = "",
+        TextColor3 = Theme.Text,
+        TextSize = fontSize(11),
+        TextWrapped = true,
+        Parent = tooltip,
+        ZIndex = 701,
+    })
+    local maxSize = create("UISizeConstraint", {
+        MaxSize = Vector2.new(320, 180),
+        Parent = tooltip,
+    })
+    self.TooltipFrame = tooltip
+    self.TooltipLabel = tooltipLabel
+
+    if content and self.SearchEnabled then
+        local searchFrame = create("Frame", {
+            BackgroundColor3 = Theme.Surface2,
+            BorderSizePixel = 0,
+            Position = UDim2.fromOffset(22, 64),
+            Size = UDim2.new(1, -44, 0, 36),
+            Parent = content,
+            ZIndex = 8,
+        })
+        corner(searchFrame, 11)
+        local searchIcon = createIcon(searchFrame, "search", 16, Theme.TextMuted, 9)
+        searchIcon.Frame.Position = UDim2.fromOffset(12, 10)
+        local searchBox = create("TextBox", {
+            BackgroundTransparency = 1,
+            ClearTextOnFocus = false,
+            FontFace = fontFace("Regular"),
+            PlaceholderText = options.SearchPlaceholder or self:T("SearchControls", "Search controls..."),
+            PlaceholderColor3 = Theme.TextDim,
+            Text = "",
+            TextColor3 = Theme.Text,
+            TextSize = fontSize(11),
+            TextXAlignment = Enum.TextXAlignment.Left,
+            Position = UDim2.fromOffset(39, 0),
+            Size = UDim2.new(1, -77, 1, 0),
+            Parent = searchFrame,
+            ZIndex = 9,
+        })
+        local clear = createTextButton({
+            BackgroundTransparency = 1,
+            Position = UDim2.new(1, -34, 0, 0),
+            Size = UDim2.fromOffset(34, 36),
+            Text = "×",
+            TextColor3 = Theme.TextMuted,
+            TextSize = fontSize(15),
+            Parent = searchFrame,
+            ZIndex = 9,
+        })
+        self.SearchFrame = searchFrame
+        self.SearchBox = searchBox
+        self:_TrackConnection(searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+            self:ApplySearch(searchBox.Text)
+        end))
+        self:_TrackConnection(clear.MouseButton1Click:Connect(function()
+            searchBox.Text = ""
+        end))
+        self.PageContainer.Position = UDim2.fromOffset(22, 110)
+        self.PageContainer.Size = UDim2.new(1, -44, 1, -110)
+    end
+
+    local mobileLayout = tostring(options.MobileLayout or "Drawer")
+    if self.MobileMode and mobileLayout:lower() ~= "classic" and sidebar and content then
+        self.MobileDrawerEnabled = true
+        self.SidebarOpen = false
+        local width = sidebar.Size.X.Offset
+        content.Position = UDim2.fromOffset(0, 0)
+        content.Size = UDim2.fromScale(1, 1)
+        sidebar.Position = UDim2.fromOffset(-width - 8, 0)
+        sidebar.ZIndex = 30
+
+        local scrim = create("TextButton", {
+            AutoButtonColor = false,
+            Text = "",
+            BackgroundColor3 = Color3.new(0, 0, 0),
+            BackgroundTransparency = 1,
+            BorderSizePixel = 0,
+            Size = UDim2.fromScale(1, 1),
+            Visible = false,
+            Parent = self.Body,
+            ZIndex = 25,
+        })
+        self.MobileScrim = scrim
+        self:_TrackConnection(scrim.MouseButton1Click:Connect(function()
+            self:SetSidebarOpen(false)
+        end))
+
+        local menuButton = createTextButton({
+            BackgroundColor3 = Theme.Surface2,
+            Position = UDim2.fromOffset(55, 13),
+            Size = UDim2.fromOffset(34, 34),
+            Parent = self.Topbar,
+            ZIndex = 12,
+        })
+        corner(menuButton, 10)
+        local menuIcon = createIcon(menuButton, "menu", 17, Theme.TextMuted, 13)
+        menuIcon.Frame.AnchorPoint = Vector2.new(0.5, 0.5)
+        menuIcon.Frame.Position = UDim2.fromScale(0.5, 0.5)
+        self.MobileMenuButton = menuButton
+        self:_TrackConnection(menuButton.MouseButton1Click:Connect(function()
+            self:ToggleSidebar()
+        end))
+
+        for _, child in ipairs(self.Topbar:GetChildren()) do
+            if child:IsA("TextLabel") and child.Position.X.Offset >= 58 then
+                child.Position = UDim2.new(child.Position.X.Scale, child.Position.X.Offset + 40, child.Position.Y.Scale, child.Position.Y.Offset)
+                child.Size = UDim2.new(child.Size.X.Scale, child.Size.X.Offset - 40, child.Size.Y.Scale, child.Size.Y.Offset)
+            end
+        end
+    end
+end
+
+local v2OriginalCreateWindow = VoltzUI.CreateWindow
+function VoltzUI:CreateWindow(options)
+    options = options or {}
+    local window = v2OriginalCreateWindow(self, options)
+    window:_InitializeProSuite(options)
+    return window
+end
+
+local v2OriginalSelectTab = WindowMethods.SelectTab
+function WindowMethods:SelectTab(tab)
+    v2OriginalSelectTab(self, tab)
+    if self.SearchEnabled then
+        self:ApplySearch(self.SearchQuery or "", tab)
+    end
+    if self.MobileDrawerEnabled and self.SidebarOpen then
+        self:SetSidebarOpen(false)
+    end
+end
+
+local v2OriginalClose = WindowMethods.Close
+function WindowMethods:Close()
+    if self._Closing then return end
+    for _, connection in ipairs(self._Connections or {}) do
+        pcall(function() connection:Disconnect() end)
+    end
+    self._Connections = {}
+    for _, callback in ipairs(self._CleanupCallbacks or {}) do
+        pcall(callback)
+    end
+    self._CleanupCallbacks = {}
+    v2OriginalClose(self)
+end
+
+function WindowMethods:Unload()
+    self:Close()
+end
+
+function WindowMethods:ReportError(context, message)
+    local title = "VoltzUI Error"
+    local detail = tostring(context or "Unknown") .. ": " .. tostring(message or "Unknown error")
+    warn("[VoltzUI] " .. detail)
+    if self.ScreenGui and self.ScreenGui.Parent then
+        self:Notify({
+            Id = "voltz-error-" .. tostring(context or "unknown"),
+            Title = title,
+            Content = detail,
+            Type = "Error",
+            Icon = "triangle-alert",
+            Duration = 7,
+        })
+    end
+    return false, detail
+end
+
+function WindowMethods:SafeCall(context, callback, ...)
+    if type(callback) ~= "function" then
+        return self:ReportError(context, "Callback is not a function")
+    end
+    local args = table.pack(...)
+    local results = table.pack(pcall(function()
+        return callback(table.unpack(args, 1, args.n))
+    end))
+    if not results[1] then
+        return self:ReportError(context, results[2])
+    end
+    return true, table.unpack(results, 2, results.n)
+end
+
+function WindowMethods:GetControl(flag)
+    local data = self.Controls and self.Controls[flag]
+    return data and data.Controller or nil
+end
+
+function WindowMethods:BindDependency(targetController, sourceController, expected)
+    if targetController and type(targetController.DependsOn) == "function" then
+        targetController:DependsOn(sourceController, expected)
+        return true
+    end
+    return false, "Target controller does not support dependencies"
+end
+
+VoltzUI.Components = VoltzUI.Components or {}
+function VoltzUI:RegisterComponent(name, factory)
+    assert(type(name) == "string" and name ~= "", "Component name is required")
+    assert(type(factory) == "function", "Component factory must be a function")
+    self.Components[name] = factory
+    return self
+end
+
+VoltzUI.RegisterPlugin = VoltzUI.RegisterComponent
+
+function SectionMethods:AddComponent(name, options)
+    local factory = VoltzUI.Components[name]
+    assert(type(factory) == "function", "Unknown VoltzUI component: " .. tostring(name))
+    return factory(self, options or {}, VoltzUI)
+end
+
+
 -- Friendly aliases: both AddButton(...) and Button(...) styles are supported.
 WindowMethods.CreateTab = WindowMethods.AddTab
 WindowMethods.Notification = WindowMethods.Notify
@@ -4834,6 +6934,13 @@ SectionMethods.Input = SectionMethods.AddInput
 SectionMethods.Keybind = SectionMethods.AddKeybind
 SectionMethods.Paragraph = SectionMethods.AddParagraph
 SectionMethods.Divider = SectionMethods.AddDivider
+SectionMethods.TextArea = SectionMethods.AddTextArea
+SectionMethods.ColorPicker = SectionMethods.AddColorPicker
+SectionMethods.Status = SectionMethods.AddStatus
+SectionMethods.List = SectionMethods.AddList
+SectionMethods.Component = SectionMethods.AddComponent
+WindowMethods.ThemeEditor = WindowMethods.AddThemeEditor
+WindowMethods.AdvancedConfigSection = WindowMethods.AddAdvancedConfigSection
 
 VoltzUI.Theme = Theme
 VoltzUI.ThemePresets = ThemeDefinitions
