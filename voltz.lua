@@ -10,7 +10,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
     Version = "2.0.0",
-    Build = "VOLTZUI-2.0.0-MOBILE-DRAG-FIX-20260708",
+    Build = "VOLTZUI-2.0.0-DROPDOWN-TOUCH-FIX-20260708",
     IconProvider = nil,
     IconsLoaded = false,
 }
@@ -2500,16 +2500,38 @@ function SectionMethods:AddDropdown(options)
 
     local function setOpen(value)
         open = value == true
+
         local visibleCount = math.min(#values, 5)
         local listHeight = visibleCount > 0
             and (visibleCount * 35 + math.max(visibleCount - 1, 0) * 5)
             or 0
 
+        -- On touch devices VoltzUI uses its own CanvasPosition fallback.
+        -- Re-enabling Roblox native scrolling here makes the dropdown and
+        -- the parent page react to the same finger drag at the same time.
+        local useMobileTouchFallback =
+            self.Tab.Window.MobileTouchScroll == true
+            and UserInputService.TouchEnabled
+
         list.Visible = open
         list.Active = open
-        list.ScrollingEnabled = open and #values > 5
+
+        if useMobileTouchFallback then
+            -- Keep native scrolling disabled. The nested dropdown remains in
+            -- TouchScrollRegistry and wins over the parent page by ZIndex/area.
+            list.ScrollingEnabled = false
+        else
+            -- Desktop and non-fallback environments can use native scrolling.
+            list.ScrollingEnabled = open and #values > 5
+        end
+
+        if not open then
+            -- Reopen from the top and prevent an old CanvasPosition from
+            -- causing the list to jump or appear to contain fewer entries.
+            list.CanvasPosition = Vector2.new(0, 0)
+        end
+
         list.Size = UDim2.new(1, -28, 0, listHeight)
-        refreshListCanvas()
 
         tween(base.Frame, 0.2, {
             Size = UDim2.new(
@@ -2523,6 +2545,23 @@ function SectionMethods:AddDropdown(options)
         tween(arrow.Frame, 0.2, {
             Rotation = open and 180 or 0,
         }, Enum.EasingStyle.Quint)
+
+        local function refreshDropdownScrolling()
+            if not base.Frame or not base.Frame.Parent then
+                return
+            end
+
+            refreshListCanvas()
+            if self.Tab and self.Tab.RefreshScroll then
+                self.Tab:RefreshScroll()
+            end
+        end
+
+        -- AutomaticSize/tween updates can finish one or more frames later.
+        -- Refresh immediately, next frame, and after the open/close tween.
+        refreshDropdownScrolling()
+        task.defer(refreshDropdownScrolling)
+        task.delay(0.22, refreshDropdownScrolling)
     end
 
     local function rebuild()
