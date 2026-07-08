@@ -1,6 +1,19 @@
+-- BUILD: VOLTZUI-2.0.0-EMBEDDED-MOBILE-GUARD-20260708
+--[[
+    VoltzUI - Clean Roblox UI Library
+    BUILD: VOLTZUI-2.0.0-EMBEDDED-MOBILE-GUARD-20260708
+    Theme: clean dark + selectable accent presets
+    External icons: https://github.com/Footagesus/Icons
+
+    Designed for client-side Roblox/Luau environments that support HttpGet + loadstring.
+    Includes persistent flags/config support through executor file APIs.
+    In Studio, you can inject your own compatible icon provider with VoltzUI:SetIconProvider(provider).
+]]
+
 local Players = game:GetService("Players")
 local TweenService = game:GetService("TweenService")
 local UserInputService = game:GetService("UserInputService")
+local ContextActionService = game:GetService("ContextActionService")
 local RunService = game:GetService("RunService")
 local CoreGui = game:GetService("CoreGui")
 local GuiService = game:GetService("GuiService")
@@ -10,9 +23,10 @@ local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
     Version = "2.0.0",
-    Build = "VOLTZUI-2.0.0-DROPDOWN-TOUCH-FIX-20260708",
+    Build = "VOLTZUI-2.0.0-EMBEDDED-MOBILE-GUARD-20260708",
     IconProvider = nil,
     IconsLoaded = false,
+    MobileInputGuardEmbedded = true,
 }
 
 local ICON_PACK_URLS = {
@@ -4354,6 +4368,8 @@ function VoltzUI:CreateWindow(options)
         MobileButton = true,
         MobileResponsive = true,
         MobileTouchScroll = true,
+        -- Mobile input blocking is embedded in the library and enabled
+        -- automatically on touch devices. No CreateWindow option is required.
         -- Touch dragging is disabled by default so a swipe used for scrolling
         -- cannot move the entire window on phones/tablets.
         MobileDraggable = false,
@@ -5084,6 +5100,192 @@ function WindowMethods:_AddCleanup(callback)
         table.insert(self._CleanupCallbacks, callback)
     end
     return callback
+end
+
+
+local function isPointInsideGui(guiObject, position)
+    if not guiObject or not guiObject.Parent or not guiObject.Visible then
+        return false
+    end
+
+    local absolutePosition = guiObject.AbsolutePosition
+    local absoluteSize = guiObject.AbsoluteSize
+
+    return position.X >= absolutePosition.X
+        and position.X <= absolutePosition.X + absoluteSize.X
+        and position.Y >= absolutePosition.Y
+        and position.Y <= absolutePosition.Y + absoluteSize.Y
+end
+
+local function stopCurrentCharacterMovement()
+    local character = LocalPlayer and LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        pcall(function()
+            humanoid:Move(Vector3.zero, true)
+        end)
+    end
+end
+
+function WindowMethods:_IsTouchInsideVoltzUI(position)
+    if not self.Visible
+        or not self.Root
+        or not self.Root.Visible
+        or not self.ScreenGui
+        or not self.ScreenGui.Parent then
+        return false
+    end
+
+    -- The main window rectangle covers scrolling frames, dropdown headers,
+    -- buttons and every standard component.
+    if self.Main and isPointInsideGui(self.Main, position) then
+        return true
+    end
+
+    -- Also catch Pro Suite overlays, confirmation dialogs, notifications and
+    -- the mobile reopen button that may live outside the main window rectangle.
+    local success, guiObjects = pcall(function()
+        return GuiService:GetGuiObjectsAtPosition(position.X, position.Y)
+    end)
+
+    if success and type(guiObjects) == "table" then
+        for _, guiObject in ipairs(guiObjects) do
+            if guiObject == self.ScreenGui or guiObject:IsDescendantOf(self.ScreenGui) then
+                return true
+            end
+        end
+    end
+
+    return self.MobileButton and isPointInsideGui(self.MobileButton, position) or false
+end
+
+function WindowMethods:_SetGameInputBlocked(blocked)
+    if not self.BlockGameInputOnTouch or not UserInputService.TouchEnabled then
+        return
+    end
+
+    blocked = blocked == true
+    if self._GameInputBlocked == blocked then
+        return
+    end
+
+    self._GameInputBlocked = blocked
+
+    -- Clear any movement vector that may already have reached PlayerModule
+    -- before the high-priority ContextAction callback processed the touch.
+    if blocked then
+        stopCurrentCharacterMovement()
+    end
+end
+
+function WindowMethods:_ClearActiveUITouches()
+    self._ActiveUITouches = {}
+    self:_SetGameInputBlocked(false)
+    stopCurrentCharacterMovement()
+end
+
+function WindowMethods:SetGameInputBlocked(blocked)
+    self:_SetGameInputBlocked(blocked)
+end
+
+function WindowMethods:IsMobileInputGuardEnabled()
+    return self.BlockGameInputOnTouch == true
+end
+
+function WindowMethods:_InitializeTouchInputGuard()
+    -- Embedded behavior: always protect character movement while a touch is
+    -- interacting with VoltzUI. This is intentionally not configurable from
+    -- CreateWindow, so every script using this library gets the fix.
+    self.BlockGameInputOnTouch = true
+    self._ActiveUITouches = {}
+    self._GameInputBlocked = false
+
+    if not self.BlockGameInputOnTouch or not UserInputService.TouchEnabled then
+        return
+    end
+
+    if self.Main then
+        self.Main.Active = true
+    end
+    if self.Root then
+        self.Root.Active = true
+    end
+
+    self._InputBlockActionName = "VoltzUI_BlockCharacterInput_"
+        .. tostring(math.floor(os.clock() * 1000000))
+        .. "_"
+        .. tostring(math.random(1000, 9999))
+
+    local blockedInputs = {
+        Enum.PlayerActions.CharacterForward,
+        Enum.PlayerActions.CharacterBackward,
+        Enum.PlayerActions.CharacterLeft,
+        Enum.PlayerActions.CharacterRight,
+        Enum.PlayerActions.CharacterJump,
+    }
+
+    local bindSuccess, bindError = pcall(function()
+        ContextActionService:BindActionAtPriority(
+            self._InputBlockActionName,
+            function()
+                if self._GameInputBlocked then
+                    return Enum.ContextActionResult.Sink
+                end
+                return Enum.ContextActionResult.Pass
+            end,
+            false,
+            3000,
+            table.unpack(blockedInputs)
+        )
+    end)
+
+    if not bindSuccess then
+        warn("[VoltzUI] Could not bind mobile input guard: " .. tostring(bindError))
+        return
+    end
+
+    self._InputGuardBound = true
+
+    self:_TrackConnection(UserInputService.InputBegan:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        if self:_IsTouchInsideVoltzUI(input.Position) then
+            self._ActiveUITouches[input] = true
+            self:_SetGameInputBlocked(true)
+        end
+    end))
+
+    self:_TrackConnection(UserInputService.InputEnded:Connect(function(input)
+        if input.UserInputType ~= Enum.UserInputType.Touch then
+            return
+        end
+
+        if self._ActiveUITouches[input] then
+            self._ActiveUITouches[input] = nil
+        end
+
+        if next(self._ActiveUITouches) == nil then
+            self:_SetGameInputBlocked(false)
+            stopCurrentCharacterMovement()
+        end
+    end))
+
+    -- Prevent a lost/cancelled touch from leaving movement blocked.
+    self:_TrackConnection(UserInputService.WindowFocusReleased:Connect(function()
+        self:_ClearActiveUITouches()
+    end))
+
+    self:_AddCleanup(function()
+        self:_ClearActiveUITouches()
+        if self._InputGuardBound and self._InputBlockActionName then
+            pcall(function()
+                ContextActionService:UnbindAction(self._InputBlockActionName)
+            end)
+        end
+        self._InputGuardBound = false
+    end)
 end
 
 function WindowMethods:_RegisterSearchEntry(tab, section, frame, options)
@@ -6928,7 +7130,16 @@ function VoltzUI:CreateWindow(options)
     options = options or {}
     local window = v2OriginalCreateWindow(self, options)
     window:_InitializeProSuite(options)
+    window:_InitializeTouchInputGuard()
     return window
+end
+
+local v2InputGuardOriginalSetVisible = WindowMethods.SetVisible
+function WindowMethods:SetVisible(value)
+    v2InputGuardOriginalSetVisible(self, value)
+    if not self.Visible then
+        self:_ClearActiveUITouches()
+    end
 end
 
 local v2OriginalSelectTab = WindowMethods.SelectTab
