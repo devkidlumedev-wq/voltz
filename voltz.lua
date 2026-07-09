@@ -11,7 +11,7 @@ local LocalPlayer = Players.LocalPlayer
 
 local VoltzUI = {
     Version = "2.0.0",
-    Build = "VOLTZUI-2.0.0-EMBEDDED-MOBILE-GUARD-20260708",
+    Build = "VOLTZUI-2.0.0-SCROLL-ONLY-GUARD-20260709",
     IconProvider = nil,
     IconsLoaded = false,
     MobileInputGuardEmbedded = true,
@@ -1142,6 +1142,67 @@ local TouchScrollRegistry = setmetatable({}, { __mode = "k" })
 local ActiveTouchScroll = nil
 local TouchScrollConnectionsBound = false
 
+-- Mobile movement guard is intentionally bound only while a finger is
+-- interacting with a registered ScrollingFrame/Dropdown list. It is not tied
+-- to the whole VoltzUI window, so opening or minimizing the UI cannot freeze
+-- the rest of the screen.
+local TouchMovementGuardActionName = "VoltzUI_ScrollOnlyMovementGuard"
+local TouchMovementGuardActive = false
+
+local function stopTouchGuardMovement()
+    local character = LocalPlayer and LocalPlayer.Character
+    local humanoid = character and character:FindFirstChildOfClass("Humanoid")
+    if humanoid then
+        pcall(function()
+            humanoid:Move(Vector3.zero, true)
+        end)
+    end
+end
+
+local function setTouchMovementGuard(blocked)
+    if not UserInputService.TouchEnabled then
+        return
+    end
+
+    blocked = blocked == true
+    if TouchMovementGuardActive == blocked then
+        return
+    end
+
+    TouchMovementGuardActive = blocked
+
+    if blocked then
+        local success, bindError = pcall(function()
+            ContextActionService:BindActionAtPriority(
+                TouchMovementGuardActionName,
+                function()
+                    return Enum.ContextActionResult.Sink
+                end,
+                false,
+                3000,
+                Enum.PlayerActions.CharacterForward,
+                Enum.PlayerActions.CharacterBackward,
+                Enum.PlayerActions.CharacterLeft,
+                Enum.PlayerActions.CharacterRight,
+                Enum.PlayerActions.CharacterJump
+            )
+        end)
+
+        if not success then
+            TouchMovementGuardActive = false
+            warn("[VoltzUI] Scroll input guard bind failed: " .. tostring(bindError))
+            return
+        end
+
+        stopTouchGuardMovement()
+    else
+        pcall(function()
+            ContextActionService:UnbindAction(TouchMovementGuardActionName)
+        end)
+        stopTouchGuardMovement()
+    end
+end
+
 local function isGuiTreeVisible(guiObject)
     if not guiObject or not guiObject.Parent then
         return false
@@ -1237,6 +1298,11 @@ local function bindTouchScrollConnections()
         end
 
         if bestFrame then
+            -- Release a stale gesture before starting a new one.
+            if ActiveTouchScroll then
+                setTouchMovementGuard(false)
+            end
+
             ActiveTouchScroll = {
                 Input = input,
                 Frame = bestFrame,
@@ -1247,6 +1313,28 @@ local function bindTouchScrollConnections()
                 Velocity = 0,
                 Dragging = false,
             }
+
+            -- Block only character movement for this scroll/dropdown gesture.
+            -- UI buttons, toggles and text boxes continue receiving input.
+            setTouchMovementGuard(true)
+
+            -- Some mobile executors occasionally miss InputEnded. Listening to
+            -- the InputObject state guarantees that the guard is released.
+            local releaseConnection
+            releaseConnection = input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End
+                    or input.UserInputState == Enum.UserInputState.Cancel then
+                    if releaseConnection then
+                        releaseConnection:Disconnect()
+                        releaseConnection = nil
+                    end
+
+                    if ActiveTouchScroll and ActiveTouchScroll.Input == input then
+                        ActiveTouchScroll = nil
+                    end
+                    setTouchMovementGuard(false)
+                end
+            end)
         end
     end)
 
@@ -1259,6 +1347,7 @@ local function bindTouchScrollConnections()
         local frame = state.Frame
         if not frame or not frame.Parent then
             ActiveTouchScroll = nil
+            setTouchMovementGuard(false)
             return
         end
 
@@ -1291,6 +1380,7 @@ local function bindTouchScrollConnections()
             return
         end
         ActiveTouchScroll = nil
+        setTouchMovementGuard(false)
 
         local frame = state.Frame
         if not state.Dragging or not frame or not frame.Parent then
@@ -1312,6 +1402,11 @@ local function bindTouchScrollConnections()
         tween(frame, duration, {
             CanvasPosition = Vector2.new(0, targetY),
         }, Enum.EasingStyle.Quint)
+    end)
+
+    UserInputService.WindowFocusReleased:Connect(function()
+        ActiveTouchScroll = nil
+        setTouchMovementGuard(false)
     end)
 end
 
@@ -5175,38 +5270,26 @@ function WindowMethods:_IsTouchInsideVoltzUI(position)
 end
 
 function WindowMethods:_SetGameInputBlocked(blocked)
-    if not self.BlockGameInputOnTouch or not UserInputService.TouchEnabled then
-        return
-    end
-
-    blocked = blocked == true
-    if self._GameInputBlocked == blocked then
-        return
-    end
-
-    self._GameInputBlocked = blocked
-
-    -- Clear any movement vector that may already have reached PlayerModule
-    -- before the high-priority ContextAction callback processed the touch.
-    if blocked then
-        stopCurrentCharacterMovement()
-    end
+    -- Public compatibility method. The library itself no longer binds a
+    -- permanent whole-window action; this dynamically binds only when asked.
+    setTouchMovementGuard(blocked == true)
+    self._GameInputBlocked = blocked == true
 end
 
 function WindowMethods:_ClearActiveUITouches()
     self._ActiveUITouches = {}
-    self:_SetGameInputBlocked(false)
-    stopCurrentCharacterMovement()
+    self._GameInputBlocked = false
+    setTouchMovementGuard(false)
 end
 
 function WindowMethods:_ReleaseUITouch(input)
-    if self._ActiveUITouches and self._ActiveUITouches[input] then
+    if self._ActiveUITouches then
         self._ActiveUITouches[input] = nil
     end
 
     if not self._ActiveUITouches or next(self._ActiveUITouches) == nil then
-        self:_SetGameInputBlocked(false)
-        stopCurrentCharacterMovement()
+        self._GameInputBlocked = false
+        setTouchMovementGuard(false)
     end
 end
 
@@ -5215,112 +5298,28 @@ function WindowMethods:SetGameInputBlocked(blocked)
 end
 
 function WindowMethods:IsMobileInputGuardEnabled()
-    return self.BlockGameInputOnTouch == true
+    return UserInputService.TouchEnabled
 end
 
 function WindowMethods:_InitializeTouchInputGuard()
-    -- Embedded behavior: always protect character movement while a touch is
-    -- interacting with VoltzUI. This is intentionally not configurable from
-    -- CreateWindow, so every script using this library gets the fix.
+    -- Important: do not make Main/Root active and do not listen for every
+    -- touch inside the window. That older behavior blocked the game whenever
+    -- VoltzUI was open. Movement protection is now handled by the registered
+    -- mobile scroll/dropdown gesture system above.
     self.BlockGameInputOnTouch = true
     self._ActiveUITouches = {}
     self._GameInputBlocked = false
+    self._InputGuardBound = false
 
-    if not self.BlockGameInputOnTouch or not UserInputService.TouchEnabled then
-        return
-    end
-
-    if self.Main then
-        self.Main.Active = true
-    end
     if self.Root then
-        -- Root is a transparent full-screen container. Keeping it Active would
-        -- swallow every touch on the display, especially after minimizing.
         self.Root.Active = false
     end
-
-    self._InputBlockActionName = "VoltzUI_BlockCharacterInput_"
-        .. tostring(math.floor(os.clock() * 1000000))
-        .. "_"
-        .. tostring(math.random(1000, 9999))
-
-    local blockedInputs = {
-        Enum.PlayerActions.CharacterForward,
-        Enum.PlayerActions.CharacterBackward,
-        Enum.PlayerActions.CharacterLeft,
-        Enum.PlayerActions.CharacterRight,
-        Enum.PlayerActions.CharacterJump,
-    }
-
-    local bindSuccess, bindError = pcall(function()
-        ContextActionService:BindActionAtPriority(
-            self._InputBlockActionName,
-            function()
-                if self._GameInputBlocked then
-                    return Enum.ContextActionResult.Sink
-                end
-                return Enum.ContextActionResult.Pass
-            end,
-            false,
-            3000,
-            table.unpack(blockedInputs)
-        )
-    end)
-
-    if not bindSuccess then
-        warn("[VoltzUI] Could not bind mobile input guard: " .. tostring(bindError))
-        return
+    if self.Main then
+        self.Main.Active = false
     end
-
-    self._InputGuardBound = true
-
-    self:_TrackConnection(UserInputService.InputBegan:Connect(function(input)
-        if input.UserInputType ~= Enum.UserInputType.Touch then
-            return
-        end
-
-        if self:_IsTouchInsideVoltzUI(input.Position) then
-            self._ActiveUITouches[input] = true
-            self:_SetGameInputBlocked(true)
-
-            -- Some mobile executors can miss InputEnded when the window is
-            -- resized during the same touch. Track the input state as a second
-            -- release path so the guard can never remain stuck.
-            local stateConnection
-            stateConnection = input.Changed:Connect(function()
-                if input.UserInputState == Enum.UserInputState.End
-                    or input.UserInputState == Enum.UserInputState.Cancel then
-                    if stateConnection then
-                        stateConnection:Disconnect()
-                        stateConnection = nil
-                    end
-                    self:_ReleaseUITouch(input)
-                end
-            end)
-        end
-    end))
-
-    self:_TrackConnection(UserInputService.InputEnded:Connect(function(input)
-        if input.UserInputType ~= Enum.UserInputType.Touch then
-            return
-        end
-
-        self:_ReleaseUITouch(input)
-    end))
-
-    -- Prevent a lost/cancelled touch from leaving movement blocked.
-    self:_TrackConnection(UserInputService.WindowFocusReleased:Connect(function()
-        self:_ClearActiveUITouches()
-    end))
 
     self:_AddCleanup(function()
         self:_ClearActiveUITouches()
-        if self._InputGuardBound and self._InputBlockActionName then
-            pcall(function()
-                ContextActionService:UnbindAction(self._InputBlockActionName)
-            end)
-        end
-        self._InputGuardBound = false
     end)
 end
 
@@ -7175,6 +7174,8 @@ function WindowMethods:SetVisible(value)
     v2InputGuardOriginalSetVisible(self, value)
     if not self.Visible then
         self:_ClearActiveUITouches()
+        ActiveTouchScroll = nil
+        setTouchMovementGuard(false)
     end
 end
 
