@@ -3739,6 +3739,12 @@ function WindowMethods:Minimize(value)
         value = not self.Minimized
     end
 
+    -- The minimize button is itself a touch target. Release the mobile input
+    -- guard before resizing so a lost InputEnded cannot freeze game controls.
+    if self._ClearActiveUITouches then
+        self:_ClearActiveUITouches()
+    end
+
     local shouldMinimize = value == true
     if self.Minimized == shouldMinimize and not self._MinimizeTween then
         return
@@ -5124,27 +5130,48 @@ function WindowMethods:_IsTouchInsideVoltzUI(position)
         return false
     end
 
-    -- The main window rectangle covers scrolling frames, dropdown headers,
-    -- buttons and every standard component.
+    -- Only the current visible main-window rectangle should consume touch.
+    -- When minimized, Main is only as tall as the header, so the rest of the
+    -- screen remains available to Roblox mobile controls.
     if self.Main and isPointInsideGui(self.Main, position) then
         return true
     end
 
-    -- Also catch Pro Suite overlays, confirmation dialogs, notifications and
-    -- the mobile reopen button that may live outside the main window rectangle.
+    if self.MobileButton and isPointInsideGui(self.MobileButton, position) then
+        return true
+    end
+
+    -- Catch real overlays that live outside Main, but explicitly ignore the
+    -- full-screen transparent Root. Root covers the entire display and was the
+    -- reason every touch was treated as VoltzUI input after minimizing.
     local success, guiObjects = pcall(function()
         return GuiService:GetGuiObjectsAtPosition(position.X, position.Y)
     end)
 
     if success and type(guiObjects) == "table" then
         for _, guiObject in ipairs(guiObjects) do
-            if guiObject == self.ScreenGui or guiObject:IsDescendantOf(self.ScreenGui) then
-                return true
+            local belongsToVoltz = guiObject ~= self.Root
+                and guiObject ~= self.Shadow
+                and guiObject:IsA("GuiObject")
+                and guiObject.Visible
+                and guiObject:IsDescendantOf(self.ScreenGui)
+
+            if belongsToVoltz then
+                local isInteractive = guiObject.Active
+                    or guiObject:IsA("TextButton")
+                    or guiObject:IsA("ImageButton")
+                    or guiObject:IsA("TextBox")
+                    or guiObject:IsA("ScrollingFrame")
+                    or guiObject.BackgroundTransparency < 1
+
+                if isInteractive then
+                    return true
+                end
             end
         end
     end
 
-    return self.MobileButton and isPointInsideGui(self.MobileButton, position) or false
+    return false
 end
 
 function WindowMethods:_SetGameInputBlocked(blocked)
@@ -5172,6 +5199,17 @@ function WindowMethods:_ClearActiveUITouches()
     stopCurrentCharacterMovement()
 end
 
+function WindowMethods:_ReleaseUITouch(input)
+    if self._ActiveUITouches and self._ActiveUITouches[input] then
+        self._ActiveUITouches[input] = nil
+    end
+
+    if not self._ActiveUITouches or next(self._ActiveUITouches) == nil then
+        self:_SetGameInputBlocked(false)
+        stopCurrentCharacterMovement()
+    end
+end
+
 function WindowMethods:SetGameInputBlocked(blocked)
     self:_SetGameInputBlocked(blocked)
 end
@@ -5196,7 +5234,9 @@ function WindowMethods:_InitializeTouchInputGuard()
         self.Main.Active = true
     end
     if self.Root then
-        self.Root.Active = true
+        -- Root is a transparent full-screen container. Keeping it Active would
+        -- swallow every touch on the display, especially after minimizing.
+        self.Root.Active = false
     end
 
     self._InputBlockActionName = "VoltzUI_BlockCharacterInput_"
@@ -5242,6 +5282,21 @@ function WindowMethods:_InitializeTouchInputGuard()
         if self:_IsTouchInsideVoltzUI(input.Position) then
             self._ActiveUITouches[input] = true
             self:_SetGameInputBlocked(true)
+
+            -- Some mobile executors can miss InputEnded when the window is
+            -- resized during the same touch. Track the input state as a second
+            -- release path so the guard can never remain stuck.
+            local stateConnection
+            stateConnection = input.Changed:Connect(function()
+                if input.UserInputState == Enum.UserInputState.End
+                    or input.UserInputState == Enum.UserInputState.Cancel then
+                    if stateConnection then
+                        stateConnection:Disconnect()
+                        stateConnection = nil
+                    end
+                    self:_ReleaseUITouch(input)
+                end
+            end)
         end
     end))
 
@@ -5250,14 +5305,7 @@ function WindowMethods:_InitializeTouchInputGuard()
             return
         end
 
-        if self._ActiveUITouches[input] then
-            self._ActiveUITouches[input] = nil
-        end
-
-        if next(self._ActiveUITouches) == nil then
-            self:_SetGameInputBlocked(false)
-            stopCurrentCharacterMovement()
-        end
+        self:_ReleaseUITouch(input)
     end))
 
     -- Prevent a lost/cancelled touch from leaving movement blocked.
