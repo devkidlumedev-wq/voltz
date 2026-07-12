@@ -21,8 +21,8 @@ local ScriptConfig = {
         Name = "Legacypiece",
         Url = 'https://raw.githubusercontent.com/devkidlumedev-wq/voltz/main/legacypiece.lua',
         Ids = {
-            105440532661931,
             111097829542198,
+            105440532661931,
         }
     },
 }
